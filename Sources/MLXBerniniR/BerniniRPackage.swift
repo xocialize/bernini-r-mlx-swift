@@ -165,3 +165,10 @@ public final class BerniniRPackage: ModelPackage {
                 frameRate: fps))
     }
 }
+
+extension BerniniRPackage {
+    /// The author one-liner the engine registers.
+    public nonisolated static var registration: PackageRegistration {
+        .of(BerniniRPackage.self)
+    }
+}
