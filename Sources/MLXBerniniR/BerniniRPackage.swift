@@ -32,13 +32,14 @@ public final class BerniniRPackage: ModelPackage {
                 tier: 1
             ),
             requirements: RequirementsManifest(
-                // Measured peaks (RunBernini GPU smokes, 832x480, 40 steps, 2026-06-12):
-                // bf16 90.8 GB (both 28.6 GB experts + fp32 umT5 resident), int4 52.5 GB.
-                // t2v at the full 49-frame envelope is unmeasured — these are the t2i-envelope
-                // figures; re-measure per memory-harness when the multi-frame envelope lands.
+                // Measured peaks (832x480, 40 steps, 2026-06-12). int4: 58.0 GB GPU-peak at
+                // the 17-frame t2v envelope (CLI) and 76.93 GB process phys_footprint in the
+                // app seam run (5-frame, incl. load transients) -> declare 80 GB. bf16:
+                // 90.8 GB at the t2i envelope; its multi-frame envelope is unmeasured (likely
+                // ~100 GB - re-measure per memory-harness before relying on bf16 t2v admission).
                 footprints: [
                     QuantFootprint(quant: .bf16, residentBytes: 91_000_000_000),
-                    QuantFootprint(quant: .int4, residentBytes: 53_000_000_000),
+                    QuantFootprint(quant: .int4, residentBytes: 80_000_000_000),
                 ],
                 requiredBackends: [.metalGPU],
                 os: OSRequirement(minMacOS: SemanticVersion(major: 26, minor: 0, patch: 0)),
