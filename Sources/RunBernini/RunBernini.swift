@@ -78,6 +78,13 @@ struct RunBernini {
             try runS5Gate(modelDir: modelDir)
             return
         }
+        if CommandLine.arguments.contains("--s6-gate") {
+            try runS6Gate(
+                bf16Dir: modelDir,
+                int4Dir: modelDir.deletingLastPathComponent()
+                    .appending(path: "ckpt-int4"))
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 

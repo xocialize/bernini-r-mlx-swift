@@ -266,10 +266,33 @@ public enum WeightLoader {
     public static func applyQuantization(
         to model: Module,
         quantization: WanQuantization,
+        preMaterialize: Bool = true,
         includePaths: [String]? = nil,
         skipPatterns: [String] = []
     ) {
         let include = includePaths ?? BerniniWeightKeys.blockLinearPaths
+
+        // Zero-fill the model's parameters BEFORE quantize. The quantize pass
+        // only needs the right SHAPES (every produced value is replaced by the
+        // loaded bit-packed tensors); leaving the random inits in place means
+        // quantize chains over ~57 GB of lazy fp32 normals — materializing or
+        // evaluating them under an already-loaded sibling expert drives the
+        // machine into memory pressure and a Metal watchdog kill
+        // (kIOGPUCommandBufferCallbackErrorTimeout, S6 2026-06-12, twice).
+        // Zeros are constant-fill: near-free to create and evaluate.
+        if preMaterialize {
+            let flat = model.parameters().flattened()
+            let zeroed = Dictionary(
+                uniqueKeysWithValues: flat.map {
+                    ($0.0, MLXArray.zeros($0.1.shape, dtype: $0.1.dtype))
+                })
+            try? model.update(parameters: ModuleParameters.unflattened(zeroed))
+            // Do NOT eval the zeros: constant-fill graphs have no slow
+            // dependencies (no fence stall), and every value is replaced by
+            // the loaded tensors before anything evaluates them. Eagerly
+            // materializing them costs ~57 GB fp32 per expert (observed as a
+            // 161 GB swap-storm peak on the first int4 smoke).
+        }
 
         MLXNN.quantize(
             model: model,
