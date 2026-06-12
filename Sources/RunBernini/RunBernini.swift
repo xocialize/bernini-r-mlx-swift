@@ -74,6 +74,10 @@ struct RunBernini {
             try runS4Gate(modelDir: modelDir)
             return
         }
+        if CommandLine.arguments.contains("--s5-gate") {
+            try runS5Gate(modelDir: modelDir)
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 

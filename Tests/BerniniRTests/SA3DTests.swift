@@ -42,7 +42,7 @@ private func tinyConfig() -> WanConfig {
 @Suite(.serialized) struct SA3DTests {
 
     @Test func visualIDPhaseMatchesOracle() throws {
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             for sid in [0, 1, 3] {
                 guard let expCos = fixture("sa3d_phase_cos_sid\(sid)"),
                       let expSin = fixture("sa3d_phase_sin_sid\(sid)") else { return }
@@ -63,7 +63,7 @@ private func tinyConfig() -> WanConfig {
         guard let expCos = fixture("sa3d_cos_ref144s1_tgt344s0"),
               let expSin = fixture("sa3d_sin_ref144s1_tgt344s0"),
               let freqs = fixture("rope_freqs_d128") else { return }
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             let (cos, sin) = prepareSA3DRopeCosSin(
                 segments: [((1, 4, 4), 1), ((3, 4, 4), 0)], freqs: freqs, headDim: 128)
             let dC = maxAbs(cos, expCos)
@@ -77,7 +77,7 @@ private func tinyConfig() -> WanConfig {
     /// multiseg path must reproduce the plain forward (same random-init
     /// weights, two different code paths).
     @Test func targetOnlyMultisegMatchesPlainForward() throws {
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             MLXRandom.seed(3)
             let config = tinyConfig()
             let model = WanModel(config)
@@ -107,7 +107,7 @@ private func tinyConfig() -> WanConfig {
               let ctxRaw = fixture("multiseg_ctx_raw"),
               let expTargetOnly = fixture("multiseg_out_targetonly"),
               let exp1Ref = fixture("multiseg_out_1ref") else { return }
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             let config = try WanConfig.load(
                 from: weightsMirror.appending(path: "config.json"))
             let model = WanModel(config)

@@ -31,7 +31,7 @@ private let weightsMirror = URL(
     /// cross-binding-reproducible and noise injection is belt-and-braces).
     @Test func rngSeedStreamMatchesPythonMLX() throws {
         guard let expected = fixture("rng_seed42_target") else { return }
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             MLXRandom.seed(42)
             let noise = MLXRandom.normal([16, 1, 16, 16])
             let diff = maxAbs(noise, expected)
@@ -51,7 +51,7 @@ private let weightsMirror = URL(
               let expRV2V = fixture("sampling_rv2v_final"),
               let expV2V = fixture("sampling_v2v_final") else { return }
 
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             let renderer = try BerniniRendererModel.fromPretrained(modelDir: weightsMirror)
             let high = renderer.highNoiseExpert
             let low = renderer.lowNoiseExpert

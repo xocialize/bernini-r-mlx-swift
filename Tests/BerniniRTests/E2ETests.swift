@@ -36,7 +36,7 @@ private let weightsMirror = URL(
               let expFinal = fixture("e2e_latent_final"),
               let expFrames = fixture("e2e_frames") else { return }
 
-        try Device.withDefaultDevice(.cpu) {
+        try withCPU {
             let renderer = try BerniniRendererModel.fromPretrained(modelDir: weightsMirror)
 
             // Per-step probes isolate which step diverges if the final gate fails.

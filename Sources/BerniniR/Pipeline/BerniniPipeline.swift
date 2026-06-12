@@ -115,7 +115,10 @@ public final class BerniniPipeline: @unchecked Sendable {
             options: options,
             onStep: onStep)
 
-        let frames = vae.decode(latent.expandedDimensions(axis: 0))
+        // Streaming decode: bit-identical to whole-sequence decode with flat
+        // peak memory (whole-sequence OOMs past ~49 frames) — the oracle's
+        // _vae_decode default.
+        let frames = decodeStreaming(vae: vae, latent.expandedDimensions(axis: 0))
         eval(frames)
         return frames
     }

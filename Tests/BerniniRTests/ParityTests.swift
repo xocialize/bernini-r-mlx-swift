@@ -47,7 +47,7 @@ private func a14b() throws -> WanConfig {
 }
 
 private func onCPU<T>(_ body: () throws -> T) rethrows -> T {
-    try Device.withDefaultDevice(.cpu, body)
+    try withCPU(body)
 }
 
 @Suite(.serialized) struct ParityTests {
