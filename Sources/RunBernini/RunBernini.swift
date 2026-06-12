@@ -70,6 +70,10 @@ func writePNG(_ frame: MLXArray, to url: URL) throws {
 @main
 struct RunBernini {
     static func main() async throws {
+        if CommandLine.arguments.contains("--s4-gate") {
+            try runS4Gate(modelDir: modelDir)
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 

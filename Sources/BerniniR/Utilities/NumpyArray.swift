@@ -12,13 +12,13 @@
 import Foundation
 import MLX
 
-enum NumpyError: LocalizedError {
+public enum NumpyError: LocalizedError {
     case badMagic
     case unsupportedDescr(String)
     case fortranOrderUnsupported
     case headerParseFailure(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .badMagic: return "Not a .npy file (magic bytes mismatch)"
         case .unsupportedDescr(let s): return "Unsupported numpy dtype: \(s) (only '<f4' is supported)"
@@ -31,7 +31,7 @@ enum NumpyError: LocalizedError {
 /// Load a `.npy` file produced by `numpy.save` and return it as an MLXArray.
 /// Restricted to little-endian fp32 / C-order — what our fixture-dump
 /// script writes.
-func loadNumpy(url: URL) throws -> MLXArray {
+public func loadNumpy(url: URL) throws -> MLXArray {
     let data = try Data(contentsOf: url)
     // Magic: \x93NUMPY
     guard data.count > 10,
