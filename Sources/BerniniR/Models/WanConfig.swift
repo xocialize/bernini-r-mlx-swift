@@ -1,0 +1,106 @@
+// WanConfig — the RESOLVED Wan2.2-T2V-A14B config, decoded from the converted
+// checkpoint's config.json (which the Python oracle's conversion wrote fully
+// resolved — no parent-class defaults are missing; see mlx-porting pitfall #10).
+// Field set mirrors mlx_video/models/wan_2/config.py `WanModelConfig`.
+
+import Foundation
+
+public struct WanQuantization: Codable, Sendable, Equatable {
+    public var groupSize: Int
+    public var bits: Int
+}
+
+public struct WanConfig: Codable, Sendable, Equatable {
+    public var modelType: String
+    public var modelVersion: String
+    public var patchSize: [Int]
+    public var textLen: Int
+    public var inDim: Int
+    public var dim: Int
+    public var ffnDim: Int
+    public var freqDim: Int
+    public var textDim: Int
+    public var outDim: Int
+    public var numHeads: Int
+    public var numLayers: Int
+    public var windowSize: [Int]
+    public var qkNorm: Bool
+    public var crossAttnNorm: Bool
+    public var eps: Double
+    public var vaeStride: [Int]
+    public var vaeZDim: Int
+    public var dualModel: Bool
+    public var boundary: Double
+    public var sampleShift: Double
+    public var sampleSteps: Int
+    public var sampleGuideScale: [Double]
+    public var numTrainTimesteps: Int
+    public var sampleFps: Int
+    public var frameNum: Int
+    public var sampleNegPrompt: String
+    public var maxArea: Int
+    public var t5VocabSize: Int
+    public var t5Dim: Int
+    public var t5DimAttn: Int
+    public var t5DimFfn: Int
+    public var t5NumHeads: Int
+    public var t5NumLayers: Int
+    public var t5NumBuckets: Int
+    /// Present only in quantized checkpoints (int4: group_size 64, bits 4).
+    public var quantization: WanQuantization?
+
+    public var headDim: Int { dim / numHeads }
+
+    /// Absolute timestep of the high/low expert boundary (875.0 at A14B defaults).
+    public var boundaryTimestep: Double { boundary * Double(numTrainTimesteps) }
+
+    enum CodingKeys: String, CodingKey {
+        case modelType = "model_type"
+        case modelVersion = "model_version"
+        case patchSize = "patch_size"
+        case textLen = "text_len"
+        case inDim = "in_dim"
+        case dim
+        case ffnDim = "ffn_dim"
+        case freqDim = "freq_dim"
+        case textDim = "text_dim"
+        case outDim = "out_dim"
+        case numHeads = "num_heads"
+        case numLayers = "num_layers"
+        case windowSize = "window_size"
+        case qkNorm = "qk_norm"
+        case crossAttnNorm = "cross_attn_norm"
+        case eps
+        case vaeStride = "vae_stride"
+        case vaeZDim = "vae_z_dim"
+        case dualModel = "dual_model"
+        case boundary
+        case sampleShift = "sample_shift"
+        case sampleSteps = "sample_steps"
+        case sampleGuideScale = "sample_guide_scale"
+        case numTrainTimesteps = "num_train_timesteps"
+        case sampleFps = "sample_fps"
+        case frameNum = "frame_num"
+        case sampleNegPrompt = "sample_neg_prompt"
+        case maxArea = "max_area"
+        case t5VocabSize = "t5_vocab_size"
+        case t5Dim = "t5_dim"
+        case t5DimAttn = "t5_dim_attn"
+        case t5DimFfn = "t5_dim_ffn"
+        case t5NumHeads = "t5_num_heads"
+        case t5NumLayers = "t5_num_layers"
+        case t5NumBuckets = "t5_num_buckets"
+        case quantization
+    }
+
+    public static func load(from url: URL) throws -> WanConfig {
+        try JSONDecoder().decode(WanConfig.self, from: Data(contentsOf: url))
+    }
+}
+
+extension WanQuantization {
+    enum CodingKeys: String, CodingKey {
+        case groupSize = "group_size"
+        case bits
+    }
+}

@@ -1,0 +1,32 @@
+# bernini-r-mlx-swift
+
+Swift port of [bernini-r-mlx](https://github.com/xocialize/bernini-r-mlx) — the Apple-MLX
+port of **ByteDance Bernini-R**, whose renderer is provenance-audited **byte-stock
+Wan2.2-T2V-A14B** (zero extra tensors; Segment-Aware 3D RoPE, source-VAE feature injection,
+and APG guidance are runtime-only deltas). Provides `t2v` / `t2i` / `r2v` / `v2v` / `rv2v`
+on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
+
+> **Status: S2 (t2v denoise core) parity-locked.** Read [`PORTING-SPEC.md`](PORTING-SPEC.md)
+> FIRST — it pins the oracle, the component donor, the key contract, the config truths, and
+> the phase gates. Landed: S0 key contract (all 4 components, bf16+int4 headers) · WanVAE
+> 1:1 translation (encode/decode parity on real fp32 weights) · umT5 lift (full-forward
+> parity, fp32) · WanModel DiT 1:1 (1095-key match; **full 40-block forward parity vs the
+> real 28.6 GB expert**) · Euler / DPM++(2M) / UniPC schedulers (trajectory bit-parity
+> incl. corrector solves) · `BerniniRendererModel` + `denoiseT2V` (**4-step dual-expert
+> CFG e2e + VAE decode matches the oracle golden**; gates: `BERNINI_R_PARITY_DIT=1`,
+> `BERNINI_R_PARITY_E2E=1`). Next: prompt-level t2v/t2i entry (umT5 tokenizer) + GPU
+> smoke (S2b), then SA-3D RoPE + multiseg (S3).
+
+| | |
+|---|---|
+| Backbone | Wan2.2-T2V-A14B dual expert (40L · dim 5120 · 40H · ffn 13824) |
+| VAE | 16-ch `AutoencoderKLWan` — Swift port lifted from `longcat-avatar-mlx-swift` (parity-locked) |
+| Text encoder | UMT5-xxl |
+| Scheduler | FlowUniPC (`bh2`, shift 3.0), expert boundary 0.875 |
+| Parity oracle | `/Volumes/DEV_ARCHIVE/bernini-r-mlx` (Python MLX, e2e-validated, int4 cosine 0.9992) |
+| Weights | [mlx-community/Bernini-R-bf16](https://huggingface.co/mlx-community/Bernini-R-bf16) · [mlx-community/Bernini-R-int4](https://huggingface.co/mlx-community/Bernini-R-int4) — consumed verbatim |
+
+Targets: `BerniniR` (engine-agnostic core) · `MLXBerniniR` (MLXEngine `ModelPackage` wrapper,
+`textToVideo` + `textToImage`).
+
+License: Apache-2.0 (Bernini, Wan2.2 acknowledged upstream — see NOTICE).

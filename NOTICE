@@ -1,0 +1,17 @@
+bernini-r-mlx-swift
+Copyright 2026 xocialize
+
+Swift/MLX port of ByteDance Bernini-R (https://huggingface.co/ByteDance/Bernini-R-Diffusers,
+Apache-2.0), whose renderer is stock Wan2.2-T2V-A14B (Alibaba Wan team, Apache-2.0).
+
+Ported from the Python MLX implementation bernini-r-mlx (xocialize, Apache-2.0), which
+reuses the Wan2.2 backbone from mlx-video (Blaizzy/mlx-video, MIT).
+
+Wan-substrate Swift components (AutoencoderKLWan VAE, UMT5 encoder, attention/RoPE
+patterns, weight loader) are adapted from longcat-avatar-mlx-swift (xocialize,
+Apache-2.0), itself derived from the diffusers AutoencoderKLWan implementation
+(HuggingFace, Apache-2.0).
+
+This product includes software developed at:
+- Apple (mlx, mlx-swift — MIT)
+- HuggingFace (swift-transformers — Apache-2.0)
