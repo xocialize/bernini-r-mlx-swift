@@ -45,6 +45,11 @@ let package = Package(
             ],
             path: "Sources/MLXBerniniR"
         ),
+        .executableTarget(
+            name: "RunBernini",
+            dependencies: ["BerniniR"],
+            path: "Sources/RunBernini"
+        ),
         .testTarget(
             name: "BerniniRTests",
             dependencies: ["BerniniR"],

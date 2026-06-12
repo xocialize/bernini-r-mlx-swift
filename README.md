@@ -17,6 +17,14 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > `BERNINI_R_PARITY_E2E=1`). Next: prompt-level t2v/t2i entry (umT5 tokenizer) + GPU
 > smoke (S2b), then SA-3D RoPE + multiseg (S3).
 
+**S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
+(no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see
+`WeightLoader.loadVerifiedSafetensors`). 832x480, 40 steps: **load 142.5 s** (archive
+disk) · **2.7 s/step, 107.7 s generate** · **peak 90.8 GB** (bf16, both experts +
+fp32 umT5 resident; memory flat across steps).
+
+![t2i smoke](assets/smoke_t2i_fox.png)
+
 | | |
 |---|---|
 | Backbone | Wan2.2-T2V-A14B dual expert (40L · dim 5120 · 40H · ffn 13824) |

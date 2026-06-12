@@ -175,6 +175,23 @@ public enum WeightLoader {
         try MLX.loadArrays(url: url)
     }
 
+    /// Materialize lazy loaded tensors in bounded chunks. Evaluating a whole
+    /// 28.6 GB expert in one `eval` keeps a single Metal command buffer alive
+    /// past the ~10 s GPU timeout (kIOGPUCommandBufferCallbackErrorTimeout,
+    /// observed on the first GPU smoke 2026-06-12) — chunking bounds each
+    /// buffer. No-op for already-materialized arrays.
+    public static func materialize(
+        _ weights: [String: MLXArray], chunk: Int = 64
+    ) {
+        let values = Array(weights.values)
+        var i = 0
+        while i < values.count {
+            let j = min(i + chunk, values.count)
+            eval(Array(values[i..<j]))
+            i = j
+        }
+    }
+
     /// Load a flat single-file safetensors checkpoint and enforce the pinned
     /// key contract: after dropping `toleratedExtras` (conversion-time
     /// artifacts the model never loads — for the int4 experts that is exactly
@@ -186,7 +203,18 @@ public enum WeightLoader {
         expectedKeys: Set<String>,
         toleratedExtras: Set<String> = []
     ) throws -> [String: MLXArray] {
-        var weights = try MLX.loadArrays(url: url)
+        // Load AND materialize on the CPU stream: lazy Load ops bind to the
+        // stream current at creation, and on the GPU stream a multi-GB read
+        // from disk keeps one Metal command buffer alive past the ~10 s GPU
+        // timeout (kIOGPUCommandBufferCallbackErrorTimeout — first GPU smoke,
+        // 2026-06-12; chunked GPU-side eval was NOT sufficient on the archive
+        // disk). CPU-stream arrays live in unified memory; GPU kernels
+        // consume them directly.
+        var weights = try Device.withDefaultDevice(.cpu) {
+            let loaded = try MLX.loadArrays(url: url)
+            materialize(loaded)
+            return loaded
+        }
         for extra in toleratedExtras {
             weights.removeValue(forKey: extra)
         }

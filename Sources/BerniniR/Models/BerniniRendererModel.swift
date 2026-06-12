@@ -73,6 +73,7 @@ public final class BerniniRendererModel: Module, @unchecked Sendable {
                 .subtracting(["freqs"]),
             toleratedExtras: quantization != nil ? ["freqs"] : []
         )
+        WeightLoader.materialize(weights)
         try expert.update(
             parameters: ModuleParameters.unflattened(weights),
             verify: [.noUnusedKeys])
