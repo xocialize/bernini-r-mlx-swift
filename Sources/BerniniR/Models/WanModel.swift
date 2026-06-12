@@ -109,6 +109,7 @@ public final class WanModel: Module, @unchecked Sendable {
 
     private let buffers: ConstantBuffers
     var freqs: MLXArray { buffers.freqs }
+    var invFreq: MLXArray { buffers.invFreq }
 
     public init(_ config: WanConfig) {
         self.config = config
@@ -156,7 +157,7 @@ public final class WanModel: Module, @unchecked Sendable {
 
     /// Convert one video latent [C, F, H, W] to patch embeddings.
     /// Returns (patches [1, L, dim], gridSize (F', H', W')).
-    private func patchify(_ x: MLXArray) -> (MLXArray, (Int, Int, Int)) {
+    func patchify(_ x: MLXArray) -> (MLXArray, (Int, Int, Int)) {
         let (c, f, h, w) = (x.dim(0), x.dim(1), x.dim(2), x.dim(3))
         let (pt, ph, pw) = (patchSize[0], patchSize[1], patchSize[2])
 

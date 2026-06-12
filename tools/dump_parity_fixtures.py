@@ -151,6 +151,59 @@ def dump_dit():
     gc.collect()
 
 
+def dump_sa3d():
+    print("[sa3d]")
+    from bernini_r_mlx.model.rope_sa3d import prepare_sa3d_rope_cos_sin, visual_id_phase
+    from mlx_video.models.wan_2.rope import rope_params
+
+    d = 128
+    freqs = mx.concatenate(
+        [
+            rope_params(1024, d - 4 * (d // 6)),
+            rope_params(1024, 2 * (d // 6)),
+            rope_params(1024, 2 * (d // 6)),
+        ],
+        axis=1,
+    )
+    for sid in (0, 1, 3):
+        c, s = visual_id_phase(sid, d)
+        save(f"sa3d_phase_cos_sid{sid}", c)
+        save(f"sa3d_phase_sin_sid{sid}", s)
+    # Two-segment sequence: ref grid (1,4,4) sid 1 + target grid (3,4,4) sid 0
+    cos, sin = prepare_sa3d_rope_cos_sin([((1, 4, 4), 1), ((3, 4, 4), 0)], freqs, d)
+    save("sa3d_cos_ref144s1_tgt344s0", cos)
+    save("sa3d_sin_ref144s1_tgt344s0", sin)
+
+
+def dump_multiseg():
+    print("[multiseg] loading bf16 high-noise expert (28.6 GB)…")
+    from bernini_r_mlx.model.multiseg import forward_multiseg
+    from mlx_video.models.wan_2.utils import load_wan_model
+
+    cfg = wan_config()
+    model = load_wan_model(WEIGHTS / "high_noise_model.safetensors", cfg)
+
+    rng = np.random.default_rng(29)
+    target = mx.array(rng.standard_normal((16, 1, 8, 8)).astype(np.float32))
+    ref = mx.array(rng.standard_normal((16, 1, 8, 8)).astype(np.float32) * 0.5)
+    ctx = mx.array(rng.standard_normal((16, 4096)).astype(np.float32) * 0.5)
+    save("multiseg_target", target)
+    save("multiseg_ref", ref)
+    save("multiseg_ctx_raw", ctx)
+
+    embedded = model.embed_text([ctx])
+    mx.eval(embedded)
+
+    t = mx.array(999.0)
+    out_t2v = forward_multiseg(model, [], target, t, embedded, head_dim=128)
+    mx.eval(out_t2v)
+    save("multiseg_out_targetonly", out_t2v)
+
+    out_ref = forward_multiseg(model, [(ref, 1)], target, t, embedded, head_dim=128)
+    mx.eval(out_ref)
+    save("multiseg_out_1ref", out_ref)
+
+
 if __name__ == "__main__":
     component = sys.argv[1] if len(sys.argv) > 1 else "all"
     dumps = {
@@ -159,6 +212,8 @@ if __name__ == "__main__":
         "vae": dump_vae,
         "t5": dump_t5,
         "dit": dump_dit,
+        "sa3d": dump_sa3d,
+        "multiseg": dump_multiseg,
     }
     if component == "all":
         for fn in dumps.values():
