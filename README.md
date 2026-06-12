@@ -15,7 +15,12 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > incl. corrector solves) · `BerniniRendererModel` + `denoiseT2V` (**4-step dual-expert
 > CFG e2e + VAE decode matches the oracle golden**; gates: `BERNINI_R_PARITY_DIT=1`,
 > `BERNINI_R_PARITY_E2E=1`). Next: prompt-level t2v/t2i entry (umT5 tokenizer) + GPU
-> smoke (S2b), then SA-3D RoPE + multiseg (S3).
+> smoke (S2b), then SA-3D RoPE + multiseg (S3). **All since landed: S3 (SA-3D + multiseg,
+> real-expert parity) · S4 (r2v/v2v/rv2v samplers, BIT-EXACT) · S5 (streaming decode,
+> BIT-IDENTICAL, the pipeline decode path) · S6 (int4, cosine 0.9977 cross-validated) ·
+> S7 wrap (`MLXBerniniR`: `BerniniRPackage` — textToVideo + textToImage, offline-conformance
+> green; live engine-seam validation pending the manual app-target link).** Heavy/Metal gates
+> run as CLI modes: `swift run RunBernini --s4-gate | --s5-gate | --s6-gate`.
 
 **S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
 (no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see

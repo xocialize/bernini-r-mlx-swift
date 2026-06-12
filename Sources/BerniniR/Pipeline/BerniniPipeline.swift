@@ -81,6 +81,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         height: Int = 480,
         numFrames: Int = 49,
         steps: Int? = nil,
+        guideScale: (Double, Double)? = nil,
         seed: UInt64? = nil,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
@@ -106,6 +107,7 @@ public final class BerniniPipeline: @unchecked Sendable {
 
         var options = T2VOptions.fromConfig(config)
         if let steps { options.steps = steps }
+        if let guideScale { options.guideScale = guideScale }
 
         let latent = try denoiseT2V(
             renderer: renderer,
@@ -130,11 +132,13 @@ public final class BerniniPipeline: @unchecked Sendable {
         width: Int = 832,
         height: Int = 480,
         steps: Int? = nil,
+        guideScale: (Double, Double)? = nil,
         seed: UInt64? = nil,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
         try t2v(
             prompt: prompt, negativePrompt: negativePrompt, width: width,
-            height: height, numFrames: 1, steps: steps, seed: seed, onStep: onStep)
+            height: height, numFrames: 1, steps: steps, guideScale: guideScale,
+            seed: seed, onStep: onStep)
     }
 }
