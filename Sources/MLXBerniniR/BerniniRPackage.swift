@@ -63,6 +63,14 @@ public final class BerniniRPackage: ModelPackage {
                         + "`.fast` mode (DPM++/16) is ~2.5× quicker at near-identical quality.",
                     modes: [.fast, .quality]
                 ),
+                VEditContract.descriptor(
+                    name: "bernini-r-vedit",
+                    summary: "Prompt-based video editing (Bernini-R v2v/rv2v, MLX). Re-render a "
+                        + "source clip toward a prompt; optional reference images steer the "
+                        + "subject's identity. (Reference-to-video *generation* — no source clip — "
+                        + "is the textToVideo surface with referenceImages.)",
+                    modes: []
+                ),
             ]
         )
     }
@@ -107,6 +115,12 @@ public final class BerniniRPackage: ModelPackage {
                     expected: "T2VRequest", got: String(describing: type(of: request)))
             }
             return try await runT2V(t2v, pipeline: pipeline)
+        case .videoEdit:
+            guard let vedit = request as? VEditRequest else {
+                throw PackageError.configurationMismatch(
+                    expected: "VEditRequest", got: String(describing: type(of: request)))
+            }
+            return try await runVideoEdit(vedit, pipeline: pipeline)
         default:
             throw PackageError.unsupportedCapability(request.capability)
         }
@@ -152,14 +166,32 @@ public final class BerniniRPackage: ModelPackage {
         try Task.checkCancellation()
         let numFrames = request.numFrames ?? 49
         let fps = request.fps ?? 16
-        // Lightning config → fixed 4-step CFG-free; else `.fast`→DPM++/16, else UniPC/40.
+        let width = request.width ?? 832
+        let height = request.height ?? 480
+
+        // r2v: reference-conditioned generation (subject-consistent). Uses the quality
+        // APG sampler — editing is not distilled, so lightning configs do plain t2v only.
+        if let refs = request.referenceImages, !refs.isEmpty {
+            let refPixels = try refs.map {
+                try decodeReferencePixels($0, width: width, height: height)
+            }
+            let frames = try pipeline.r2v(
+                prompt: request.prompt, referencePixels: refPixels,
+                negativePrompt: request.negativePrompt,
+                width: width, height: height, numFrames: numFrames,
+                steps: request.steps ?? 40, seed: request.seed ?? 42
+            ) { _, _, _ in try Task.checkCancellation() }
+            return try await framesToVideoResponse(frames, fps: fps)
+        }
+
+        // Plain t2v. Lightning config → fixed 4-step CFG-free; else `.fast`→DPM++/16, else UniPC/40.
         let lit = configuration.lightning
         let sampling = resolveSampling(mode: request.mode, steps: request.steps)
         let frames = try pipeline.t2v(
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,
-            width: request.width ?? 832,
-            height: request.height ?? 480,
+            width: width,
+            height: height,
             numFrames: numFrames,
             steps: lit ? nil : sampling.steps,
             guideScale: lit ? nil : request.guidanceScale.map { ($0, $0) },
@@ -169,14 +201,46 @@ public final class BerniniRPackage: ModelPackage {
         ) { _, _, _ in
             try Task.checkCancellation()  // C13: per-denoising-step cancellation
         }
+        return try await framesToVideoResponse(frames, fps: fps)
+    }
+
+    /// Prompt-based video editing (v2v / rv2v): decode the source clip + any reference
+    /// images to pixels, re-render toward the prompt, re-encode to an mp4 `Video`.
+    private func runVideoEdit(_ request: VEditRequest, pipeline: BerniniPipeline) async throws
+        -> VEditResponse
+    {
+        try Task.checkCancellation()
+        let numFrames = request.numFrames ?? 49
+        let fps = request.fps ?? 16
+        let width = request.width ?? 832
+        let height = request.height ?? 480
+
+        let sourcePixels = try await decodeVideoPixels(
+            request.video, width: width, height: height, numFrames: numFrames)
+        let refPixels = try (request.referenceImages ?? []).map {
+            try decodeReferencePixels($0, width: width, height: height)
+        }
+        // rv2v when references steer the subject, plain v2v otherwise.
+        let mode: EditGuidanceMode = refPixels.isEmpty ? .v2v : .rv2v
+        let frames = try pipeline.videoEdit(
+            prompt: request.prompt, sourceVideoPixels: sourcePixels, referencePixels: refPixels,
+            mode: mode, negativePrompt: request.negativePrompt,
+            width: width, height: height, numFrames: numFrames,
+            steps: request.steps ?? 40, seed: request.seed ?? 42
+        ) { _, _, _ in try Task.checkCancellation() }
+
         try Task.checkCancellation()
         let mp4 = try await encodeMP4(frames: frames, fps: fps)
-        let outFrames = frames.dim(2)
+        return VEditResponse(
+            video: Video(format: .mp4, data: mp4,
+                         durationSeconds: Double(frames.dim(2)) / fps, frameRate: fps))
+    }
+
+    private func framesToVideoResponse(_ frames: MLXArray, fps: Double) async throws -> T2VResponse {
+        let mp4 = try await encodeMP4(frames: frames, fps: fps)
         return T2VResponse(
-            video: Video(
-                format: .mp4, data: mp4,
-                durationSeconds: Double(outFrames) / fps,
-                frameRate: fps))
+            video: Video(format: .mp4, data: mp4,
+                         durationSeconds: Double(frames.dim(2)) / fps, frameRate: fps))
     }
 }
 

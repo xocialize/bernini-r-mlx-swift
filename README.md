@@ -35,6 +35,13 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 >
 > ![lightning 4-step](assets/smoke_lightning_fox.png)
 
+> **Editing (contract 1.3.0):** `videoEdit` (v2v/rv2v — re-render a source clip toward a prompt,
+> optional reference images steer the subject) + `T2VRequest.referenceImages` for reference-to-
+> video generation (r2v). The samplers are parity-locked bit-exact (S4); `RunBernini --r2v <img>`
+> validates the preprocessing → r2v chain (subject preserved):
+>
+> ![r2v](assets/smoke_r2v_fox.png)
+
 **S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
 (no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see
 `WeightLoader.loadVerifiedSafetensors`). 832x480, 40 steps: **load 142.5 s** (archive

@@ -40,6 +40,7 @@ let steps = argValue("--steps").flatMap(Int.init) ?? 40
 let seed = argValue("--seed").flatMap(UInt64.init) ?? 42
 let solver = argValue("--solver").flatMap(SchedulerKind.init(rawValue:)) ?? .unipc
 let lightning = CommandLine.arguments.contains("--lightning")
+let r2vRef = argValue("--r2v")  // reference image path → r2v (subject-consistent t2v)
 let modelDir = URL(
     filePath: argValue("--model-dir")
         ?? "/Volumes/DEV_ARCHIVE/weights/bernini-r-mlx-weights/ckpt-bf16")
@@ -67,6 +68,35 @@ func writePNG(_ frame: MLXArray, to url: URL) throws {
         url as CFURL, UTType.png.identifier as CFString, 1, nil)!
     CGImageDestinationAddImage(dest, image, nil)
     CGImageDestinationFinalize(dest)
+}
+
+/// Decode a reference image file → pixels [1,3,1,H,W] in [-1,1], top-down
+/// (mirrors the wrapper's FrameDecode; CLI-side for the --r2v gate).
+func decodeRefImage(_ path: String, width: Int, height: Int) throws -> MLXArray {
+    let data = try Data(contentsOf: URL(filePath: path))
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+          let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+        throw NSError(domain: "RunBernini", code: 1)
+    }
+    var rgba = [UInt8](repeating: 0, count: width * height * 4)
+    let ctx = CGContext(
+        data: &rgba, width: width, height: height, bitsPerComponent: 8,
+        bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.interpolationQuality = .high
+    ctx.translateBy(x: 0, y: CGFloat(height)); ctx.scaleBy(x: 1, y: -1)
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let plane = height * width
+    var chw = [Float](repeating: 0, count: 3 * plane)
+    for y in 0..<height {
+        for x in 0..<width {
+            let p = (y * width + x) * 4, i = y * width + x
+            chw[i] = Float(rgba[p]) / 255 * 2 - 1
+            chw[plane + i] = Float(rgba[p + 1]) / 255 * 2 - 1
+            chw[2 * plane + i] = Float(rgba[p + 2]) / 255 * 2 - 1
+        }
+    }
+    return MLXArray(chw, [1, 3, 1, height, width])
 }
 
 @main
@@ -102,19 +132,29 @@ struct RunBernini {
         print("  prompt: \(prompt)")
         let tGen = Date()
         var lastStepEnd = Date()
-        let frames = try pipeline.t2v(
-            prompt: prompt, width: width, height: height, numFrames: numFrames,
-            steps: lightning ? nil : steps,
-            scheduler: lightning ? nil : solver, lightning: lightning, seed: seed
-        ) { step, total, _ in
+        let progress: (Int, Int, MLXArray) -> Void = { step, total, _ in
             let dt = -lastStepEnd.timeIntervalSinceNow
             lastStepEnd = Date()
-            let active = Double(GPU.activeMemory) / 1e9
-            let peak = Double(GPU.peakMemory) / 1e9
             print(
                 String(
                     format: "  step %d/%d  %.1fs  active %.1f GB  peak %.1f GB",
-                    step + 1, total, dt, active, peak))
+                    step + 1, total, dt, Double(GPU.activeMemory) / 1e9,
+                    Double(GPU.peakMemory) / 1e9))
+        }
+        let frames: MLXArray
+        if let r2vRef {
+            print("  r2v reference: \(r2vRef)")
+            let refPixels = try decodeRefImage(r2vRef, width: width, height: height)
+            frames = try pipeline.r2v(
+                prompt: prompt, referencePixels: [refPixels],
+                width: width, height: height, numFrames: numFrames,
+                steps: steps, seed: seed, onStep: progress)
+        } else {
+            frames = try pipeline.t2v(
+                prompt: prompt, width: width, height: height, numFrames: numFrames,
+                steps: lightning ? nil : steps,
+                scheduler: lightning ? nil : solver, lightning: lightning, seed: seed,
+                onStep: progress)
         }
         print(String(format: "  generate: %.1fs total", -tGen.timeIntervalSinceNow))
 

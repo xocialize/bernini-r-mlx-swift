@@ -15,11 +15,12 @@ import Testing
         #expect(result.isAdmitted)
     }
 
-    @Test func manifestDeclaresBothSurfaces() {
+    @Test func manifestDeclaresSurfaces() {
         let manifest = BerniniRPackage.manifest
         let capabilities = Set(manifest.surfaces.map(\.capability))
-        #expect(capabilities == [.textToVideo, .textToImage])
-        // Descriptors carry hand-tuned, non-empty summaries (C11).
+        // textToVideo + textToImage (generation) + videoEdit (v2v/rv2v, contract 1.3.0).
+        #expect(capabilities == [.textToVideo, .textToImage, .videoEdit])
+        // Descriptors carry hand-tuned, non-empty summaries with a required prompt (C11).
         for surface in manifest.surfaces {
             #expect(!surface.summary.isEmpty)
             #expect(surface.parameters.contains { $0.name == "prompt" && $0.required })
@@ -58,10 +59,15 @@ import Testing
         #expect(decoded.modelDirectory == nil)
     }
 
-    @Test func surfacesDeclareFastAndQualityModes() {
-        // C11: the `.fast` accelerated mode must be introspectable so a planner
-        // can choose it.
-        for surface in BerniniRPackage.manifest.surfaces {
+    @Test func generationSurfacesDeclareFastAndQualityModes() {
+        // C11: the `.fast` accelerated mode must be introspectable on the GENERATION
+        // surfaces (t2v/t2i) so a planner can choose it. (videoEdit has no speed mode —
+        // editing runs the quality APG sampler.)
+        let gen = BerniniRPackage.manifest.surfaces.filter {
+            $0.capability == .textToVideo || $0.capability == .textToImage
+        }
+        #expect(gen.count == 2)
+        for surface in gen {
             #expect(surface.supportedModes.contains(.fast))
             #expect(surface.supportedModes.contains(.quality))
         }
@@ -96,7 +102,7 @@ import Testing
     @Test func registrationConstructs() throws {
         // C13: the engine constructs the package via the registration factory.
         let registration = PackageRegistration.of(BerniniRPackage.self)
-        #expect(registration.manifest.surfaces.count == 2)
+        #expect(registration.manifest.surfaces.count == 3)
         let package = try registration.makePackage(BerniniRConfiguration())
         #expect(package is BerniniRPackage)
     }
