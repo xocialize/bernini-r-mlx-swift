@@ -22,6 +22,11 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > green; live engine-seam validation pending the manual app-target link).** Heavy/Metal gates
 > run as CLI modes: `swift run RunBernini --s4-gate | --s5-gate | --s6-gate`.
 
+> **Speed:** `.fast` request mode = DPM++(2M) at 16 steps — **2.53× faster** than the 40-step
+> UniPC default at near-identical quality (int4, 17-frame t2v: 415.6 s vs 1049.7 s, same seed
+> + 58 GB peak, 2026-06-12). CLI: `--solver dpm++ --steps 16`. The quality path stays the
+> default (`.quality` / no mode).
+
 **S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
 (no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see
 `WeightLoader.loadVerifiedSafetensors`). 832x480, 40 steps: **load 142.5 s** (archive

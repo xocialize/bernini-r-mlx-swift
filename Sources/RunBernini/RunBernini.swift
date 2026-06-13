@@ -38,6 +38,7 @@ let width = argValue("--width").flatMap(Int.init) ?? 832
 let height = argValue("--height").flatMap(Int.init) ?? 480
 let steps = argValue("--steps").flatMap(Int.init) ?? 40
 let seed = argValue("--seed").flatMap(UInt64.init) ?? 42
+let solver = argValue("--solver").flatMap(SchedulerKind.init(rawValue:)) ?? .unipc
 let modelDir = URL(
     filePath: argValue("--model-dir")
         ?? "/Volumes/DEV_ARCHIVE/weights/bernini-r-mlx-weights/ckpt-bf16")
@@ -94,13 +95,14 @@ struct RunBernini {
         print(String(format: "  load: %.1fs", -tLoad.timeIntervalSinceNow))
 
         print(
-            "Generating \(numFrames) frame(s) @ \(width)x\(height), \(steps) steps, seed \(seed)")
+            "Generating \(numFrames) frame(s) @ \(width)x\(height), \(steps) steps, "
+                + "\(solver.rawValue), seed \(seed)")
         print("  prompt: \(prompt)")
         let tGen = Date()
         var lastStepEnd = Date()
         let frames = try pipeline.t2v(
             prompt: prompt, width: width, height: height, numFrames: numFrames,
-            steps: steps, seed: seed
+            steps: steps, scheduler: solver, seed: seed
         ) { step, total, _ in
             let dt = -lastStepEnd.timeIntervalSinceNow
             lastStepEnd = Date()

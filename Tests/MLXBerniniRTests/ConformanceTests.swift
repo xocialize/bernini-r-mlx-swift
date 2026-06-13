@@ -58,6 +58,30 @@ import Testing
         #expect(decoded.modelDirectory == nil)
     }
 
+    @Test func surfacesDeclareFastAndQualityModes() {
+        // C11: the `.fast` accelerated mode must be introspectable so a planner
+        // can choose it.
+        for surface in BerniniRPackage.manifest.surfaces {
+            #expect(surface.supportedModes.contains(.fast))
+            #expect(surface.supportedModes.contains(.quality))
+        }
+    }
+
+    @Test func fastModeResolvesToDpmpp16() {
+        // `.fast` → DPM++/16 (the validated 2.5× path); default → 40-step UniPC.
+        let fast = resolveSampling(mode: .fast, steps: nil)
+        #expect(fast.scheduler == .dpmpp)
+        #expect(fast.steps == 16)
+
+        let quality = resolveSampling(mode: .quality, steps: nil)
+        #expect(quality.scheduler == .unipc)
+        #expect(quality.steps == nil)  // nil → core uses the config default (40)
+
+        // An explicit step count always wins over the mode default.
+        #expect(resolveSampling(mode: .fast, steps: 8).steps == 8)
+        #expect(resolveSampling(mode: nil, steps: nil).scheduler == .unipc)
+    }
+
     @Test func registrationConstructs() throws {
         // C13: the engine constructs the package via the registration factory.
         let registration = PackageRegistration.of(BerniniRPackage.self)
