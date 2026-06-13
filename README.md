@@ -27,6 +27,14 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > + 58 GB peak, 2026-06-12). CLI: `--solver dpm++ --steps 16`. The quality path stays the
 > default (`.quality` / no mode).
 
+> **Lightning (4-step, real-time):** the `lightx2v/Wan2.2-Lightning` 4-step distillation
+> (Apache-2.0) merged into the experts → **CFG-free, ~35× faster denoise** (17-frame 832×480:
+> 67.5 s vs ~1050 s at 40-step UniPC; visual quality holds). `BerniniRConfiguration.lightning`
+> · `RunBernini --lightning`. Merge tool: `tools/merge_lightning.py` (key-matched to our
+> linears; merged ckpt keeps the 1095-key contract → loads unchanged).
+>
+> ![lightning 4-step](assets/smoke_lightning_fox.png)
+
 **S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
 (no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see
 `WeightLoader.loadVerifiedSafetensors`). 832x480, 40 steps: **load 142.5 s** (archive

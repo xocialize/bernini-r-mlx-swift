@@ -24,16 +24,21 @@ public struct T2VOptions: Sendable {
     /// index 0 applies below the boundary, index 1 at/above it.
     public var guideScale: (Double, Double)
     public var scheduler: SchedulerKind
+    /// CFG-free generation (B=1, no uncond pass). The Lightning 4-step
+    /// distillation runs without the CFG trick; `guideScale` is then unused.
+    public var noCFG: Bool
 
     public init(
         steps: Int = 40, shift: Double = 3.0,
         guideScale: (Double, Double) = (3.0, 4.0),
-        scheduler: SchedulerKind = .unipc
+        scheduler: SchedulerKind = .unipc,
+        noCFG: Bool = false
     ) {
         self.steps = steps
         self.shift = shift
         self.guideScale = guideScale
         self.scheduler = scheduler
+        self.noCFG = noCFG
     }
 
     public static func fromConfig(_ config: WanConfig) -> T2VOptions {
@@ -41,6 +46,13 @@ public struct T2VOptions: Sendable {
             steps: config.sampleSteps,
             shift: config.sampleShift,
             guideScale: (config.sampleGuideScale[0], config.sampleGuideScale[1]))
+    }
+
+    /// lightx2v Wan2.2-Lightning 4-step recipe: euler · shift 5.0 · CFG-free.
+    /// (Expert switch stays the timestep boundary 875 — at shift 5 the 4
+    /// timesteps split 2 high / 2 low, matching the reference workflow.)
+    public static var lightning: T2VOptions {
+        T2VOptions(steps: 4, shift: 5.0, scheduler: .euler, noCFG: true)
     }
 }
 
@@ -66,9 +78,11 @@ public func denoiseT2V(
     let high = renderer.highNoiseExpert
     let low = renderer.lowNoiseExpert
 
-    // Pre-embed [cond, uncond] per expert (each expert has its own text MLP)
-    let contextCfgHigh = high.embedText([contextCond, contextNull])
-    let contextCfgLow = low.embedText([contextCond, contextNull])
+    // Pre-embed conditioning per expert (each has its own text MLP). CFG →
+    // [cond, uncond] (B=2); CFG-free (Lightning) → [cond] only (B=1, no uncond).
+    let textIn = options.noCFG ? [contextCond] : [contextCond, contextNull]
+    let contextCfgHigh = high.embedText(textIn)
+    let contextCfgLow = low.embedText(textIn)
     eval(contextCfgHigh, contextCfgLow)
 
     // Precompute cross-attention K/V caches (constant across all steps)
@@ -81,7 +95,8 @@ public func denoiseT2V(
     let fGrid = tLat / config.patchSize[0]
     let hGrid = hLat / config.patchSize[1]
     let wGrid = wLat / config.patchSize[2]
-    let ropeGridSizes = [(fGrid, hGrid, wGrid), (fGrid, hGrid, wGrid)]
+    let grid = (fGrid, hGrid, wGrid)
+    let ropeGridSizes = options.noCFG ? [grid] : [grid, grid]
     let ropeCosSinHigh = high.prepareRope(ropeGridSizes)
     let ropeCosSinLow = low.prepareRope(ropeGridSizes)
     let seqLen = fGrid * hGrid * wGrid
@@ -114,15 +129,23 @@ public func denoiseT2V(
         let kv = isHigh ? crossKVHigh : crossKVLow
         let rcs = isHigh ? ropeCosSinHigh : ropeCosSinLow
         let ctx = isHigh ? contextCfgHigh : contextCfgLow
-        let gs = isHigh ? options.guideScale.1 : options.guideScale.0
 
-        let tBatch = MLXArray([Float(timestepVal), Float(timestepVal)])
-        let preds = model(
-            [latents, latents], t: tBatch, context: .embedded(ctx), seqLen: seqLen,
-            crossKVCaches: kv, ropeCosSin: rcs)
-        let noisePredCond = preds[0]
-        let noisePredUncond = preds[1]
-        let noisePred = noisePredUncond + Float(gs) * (noisePredCond - noisePredUncond)
+        let noisePred: MLXArray
+        if options.noCFG {
+            // CFG-free (Lightning): single forward, the prediction IS the output.
+            let preds = model(
+                [latents], t: MLXArray([Float(timestepVal)]), context: .embedded(ctx),
+                seqLen: seqLen, crossKVCaches: kv, ropeCosSin: rcs)
+            noisePred = preds[0]
+        } else {
+            // CFG: cond + uncond batched into one B=2 forward, then combined.
+            let gs = isHigh ? options.guideScale.1 : options.guideScale.0
+            let tBatch = MLXArray([Float(timestepVal), Float(timestepVal)])
+            let preds = model(
+                [latents, latents], t: tBatch, context: .embedded(ctx), seqLen: seqLen,
+                crossKVCaches: kv, ropeCosSin: rcs)
+            noisePred = preds[1] + Float(gs) * (preds[0] - preds[1])
+        }
 
         let stepped: MLXArray
         let predB = noisePred.expandedDimensions(axis: 0)

@@ -19,6 +19,10 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable {
     /// Backbone quant of the chosen variant (bf16 or int4) — selection metadata; the loader
     /// auto-detects the actual quantization from the checkpoint's config.json.
     public var quant: Quant
+    /// The checkpoint is the lightx2v 4-step Lightning merge → the package always uses the
+    /// CFG-free 4-step euler/shift-5 sampler (the merged weights only work few-step). A
+    /// *different checkpoint*, so it's a config (which package loads), not a request mode.
+    public var lightning: Bool
     /// Resolved local checkpoint folder. Environment-specific → excluded from `Codable`.
     public var modelDirectory: URL?
     /// Engine-chosen models root (future auto-materialization target). Environment-specific →
@@ -29,12 +33,14 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable {
         repo: String = "mlx-community/Bernini-R-bf16",
         revision: String? = nil,
         quant: Quant = .bf16,
+        lightning: Bool = false,
         modelDirectory: URL? = nil,
         modelsRootDirectory: URL? = nil
     ) {
         self.repo = repo
         self.revision = revision
         self.quant = quant
+        self.lightning = lightning
         self.modelDirectory = modelDirectory
         self.modelsRootDirectory = modelsRootDirectory
     }
@@ -44,7 +50,13 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable {
         BerniniRConfiguration(repo: "mlx-community/Bernini-R-int4", quant: .int4)
     }
 
+    /// The lightx2v 4-step Lightning merge — CFG-free, ~35× faster denoise. Point
+    /// `modelDirectory` at the merged checkpoint (publish to HF pending).
+    public static var lightning: BerniniRConfiguration {
+        BerniniRConfiguration(repo: "mlx-community/Wan2.2-T2V-A14B-Lightning", lightning: true)
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case repo, revision, quant
+        case repo, revision, quant, lightning
     }
 }

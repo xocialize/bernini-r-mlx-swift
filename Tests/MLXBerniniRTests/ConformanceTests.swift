@@ -82,6 +82,17 @@ import Testing
         #expect(resolveSampling(mode: nil, steps: nil).scheduler == .unipc)
     }
 
+    @Test func lightningConfigRoundTrips() throws {
+        let config = BerniniRConfiguration.lightning
+        #expect(config.lightning)
+        #expect(config.quant == .bf16)
+        let decoded = try JSONDecoder().decode(
+            BerniniRConfiguration.self, from: JSONEncoder().encode(config))
+        #expect(decoded.lightning)  // the flag survives Codable
+        // The standard config is not Lightning.
+        #expect(!BerniniRConfiguration.int4.lightning)
+    }
+
     @Test func registrationConstructs() throws {
         // C13: the engine constructs the package via the registration factory.
         let registration = PackageRegistration.of(BerniniRPackage.self)

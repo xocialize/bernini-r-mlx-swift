@@ -116,18 +116,21 @@ public final class BerniniRPackage: ModelPackage {
 
     private func runT2I(_ request: T2IRequest, pipeline: BerniniPipeline) throws -> T2IResponse {
         try Task.checkCancellation()
-        // `.fast` mode → DPM++/16 (validated 2.5× over the 40-step UniPC default).
+        // Lightning config → the fixed 4-step CFG-free sampler (overrides mode/steps).
+        // Otherwise `.fast` mode → DPM++/16, else the 40-step UniPC default.
+        let lit = configuration.lightning
         let sampling = resolveSampling(mode: request.mode, steps: request.steps)
         let frames = try pipeline.t2i(
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,
             width: request.width ?? 832,
             height: request.height ?? 480,
-            steps: sampling.steps,
+            steps: lit ? nil : sampling.steps,
             // Canonical scalar guidance applies to both expert phases (mlx-video float
             // semantics); absent -> config defaults (low 3.0, high 4.0).
-            guideScale: request.guidanceScale.map { ($0, $0) },
-            scheduler: sampling.scheduler,
+            guideScale: lit ? nil : request.guidanceScale.map { ($0, $0) },
+            scheduler: lit ? nil : sampling.scheduler,
+            lightning: lit,
             seed: request.seed
         ) { _, _, _ in
             try Task.checkCancellation()  // C13: per-denoising-step cancellation
@@ -149,7 +152,8 @@ public final class BerniniRPackage: ModelPackage {
         try Task.checkCancellation()
         let numFrames = request.numFrames ?? 49
         let fps = request.fps ?? 16
-        // `.fast` mode → DPM++/16 (validated 2.5× over the 40-step UniPC default).
+        // Lightning config → fixed 4-step CFG-free; else `.fast`→DPM++/16, else UniPC/40.
+        let lit = configuration.lightning
         let sampling = resolveSampling(mode: request.mode, steps: request.steps)
         let frames = try pipeline.t2v(
             prompt: request.prompt,
@@ -157,9 +161,10 @@ public final class BerniniRPackage: ModelPackage {
             width: request.width ?? 832,
             height: request.height ?? 480,
             numFrames: numFrames,
-            steps: sampling.steps,
-            guideScale: request.guidanceScale.map { ($0, $0) },
-            scheduler: sampling.scheduler,
+            steps: lit ? nil : sampling.steps,
+            guideScale: lit ? nil : request.guidanceScale.map { ($0, $0) },
+            scheduler: lit ? nil : sampling.scheduler,
+            lightning: lit,
             seed: request.seed
         ) { _, _, _ in
             try Task.checkCancellation()  // C13: per-denoising-step cancellation

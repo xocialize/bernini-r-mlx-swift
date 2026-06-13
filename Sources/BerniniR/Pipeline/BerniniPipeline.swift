@@ -83,6 +83,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         steps: Int? = nil,
         guideScale: (Double, Double)? = nil,
         scheduler: SchedulerKind? = nil,
+        lightning: Bool = false,
         seed: UInt64? = nil,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
@@ -106,7 +107,9 @@ public final class BerniniPipeline: @unchecked Sendable {
         }
         let noise = MLXRandom.normal([config.vaeZDim, tLat, hLat, wLat])
 
-        var options = T2VOptions.fromConfig(config)
+        // Lightning preset (euler/shift5/4-step/CFG-free) requires the merged
+        // Lightning checkpoint; otherwise the config-default CFG path.
+        var options = lightning ? T2VOptions.lightning : T2VOptions.fromConfig(config)
         if let steps { options.steps = steps }
         if let guideScale { options.guideScale = guideScale }
         if let scheduler { options.scheduler = scheduler }
@@ -136,12 +139,13 @@ public final class BerniniPipeline: @unchecked Sendable {
         steps: Int? = nil,
         guideScale: (Double, Double)? = nil,
         scheduler: SchedulerKind? = nil,
+        lightning: Bool = false,
         seed: UInt64? = nil,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
         try t2v(
             prompt: prompt, negativePrompt: negativePrompt, width: width,
             height: height, numFrames: 1, steps: steps, guideScale: guideScale,
-            scheduler: scheduler, seed: seed, onStep: onStep)
+            scheduler: scheduler, lightning: lightning, seed: seed, onStep: onStep)
     }
 }
