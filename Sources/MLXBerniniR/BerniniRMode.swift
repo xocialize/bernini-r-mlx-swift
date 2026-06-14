@@ -1,4 +1,5 @@
 import BerniniR
+import WanCore
 import MLXToolKit
 
 extension Mode {

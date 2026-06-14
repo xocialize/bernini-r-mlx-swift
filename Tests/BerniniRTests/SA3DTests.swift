@@ -1,4 +1,5 @@
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 import Testing

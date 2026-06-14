@@ -3,6 +3,7 @@
 // checkpoint; deviations are port bugs (PORTING-SPEC.md "Pinned config").
 
 import Foundation
+import WanCore
 
 /// Mirror of `BerniniRendererConfig` (oracle `bernini_r_mlx/config.py`).
 public struct BerniniRendererConfig: Codable, Sendable {

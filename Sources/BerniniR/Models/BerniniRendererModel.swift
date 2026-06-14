@@ -7,6 +7,7 @@
 // injection) attach at the RoPE / latent-prep seams in later phases.
 
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 

@@ -6,6 +6,7 @@
 // testing-helper issue; executables are unaffected).
 
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 import MLXRandom

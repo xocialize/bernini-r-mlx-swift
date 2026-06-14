@@ -4,6 +4,7 @@
 // no MLX beyond reading the frame tensor out.
 
 import AVFoundation
+import WanCore
 import CoreGraphics
 import CoreVideo
 import Foundation

@@ -7,6 +7,7 @@
 // only affects multi-segment r2v / v2v / rv2v.
 
 import Foundation
+import WanCore
 import MLX
 
 /// One visual segment: latent grid (f, h, w) + SA-3D source id

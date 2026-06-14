@@ -3,6 +3,7 @@
 // recipe measured 0.9992). Same DiT fixture input as the S1 forward gate.
 
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 

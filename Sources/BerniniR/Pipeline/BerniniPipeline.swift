@@ -5,6 +5,7 @@
 // MLXEngine wrap returns canonical Video/Image; the smoke CLI writes PNGs).
 
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 import MLXRandom

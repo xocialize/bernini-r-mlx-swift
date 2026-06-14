@@ -9,6 +9,7 @@
 // fixtures). t2i is t2v with one frame.
 
 import Foundation
+import WanCore
 import MLX
 
 public enum SchedulerKind: String, Sendable {

@@ -5,6 +5,7 @@
 // separated from the target, which is what preserves subject identity.
 
 import Foundation
+import WanCore
 import MLX
 import MLXRandom
 

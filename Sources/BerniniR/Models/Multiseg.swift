@@ -11,6 +11,7 @@
 // the entire multi-segment sequence.
 
 import Foundation
+import WanCore
 import MLX
 import MLXNN
 

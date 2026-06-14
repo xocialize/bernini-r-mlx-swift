@@ -1,4 +1,5 @@
 import Foundation
+import WanCore
 import Testing
 @testable import BerniniR
 

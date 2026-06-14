@@ -11,6 +11,7 @@
 // convention for live GPU inference.
 
 import CoreGraphics
+import WanCore
 import Foundation
 import ImageIO
 import MLX

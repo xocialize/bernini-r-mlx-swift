@@ -5,6 +5,7 @@
 // test bundle uses, straight from the source tree.
 
 import Foundation
+import WanCore
 import MLX
 
 import BerniniR

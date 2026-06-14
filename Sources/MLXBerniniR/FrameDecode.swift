@@ -5,6 +5,7 @@
 // core editing methods (`r2v`/`videoEdit`) consume.
 
 import AVFoundation
+import WanCore
 import CoreGraphics
 import CoreImage
 import Foundation

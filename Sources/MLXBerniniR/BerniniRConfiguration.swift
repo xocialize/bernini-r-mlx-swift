@@ -1,4 +1,5 @@
 import Foundation
+import WanCore
 import MLXToolKit
 
 /// Init-time configuration for `BerniniRPackage` (C9): which published variant and where the

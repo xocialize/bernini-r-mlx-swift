@@ -6,6 +6,7 @@
 // streaming-decode chain around them.
 
 import Foundation
+import WanCore
 import MLX
 import MLXRandom
 

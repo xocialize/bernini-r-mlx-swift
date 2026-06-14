@@ -1,4 +1,5 @@
 import Testing
+import WanCore
 @testable import BerniniR
 
 // S0 gate: wrapper defaults must match the verified oracle config

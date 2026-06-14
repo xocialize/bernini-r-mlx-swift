@@ -1,4 +1,5 @@
 import MLX
+import WanCore
 
 // All numeric gates run on the CPU stream (parity doctrine). Pinning the
 // GLOBAL default device to CPU — once, before any MLX op — keeps mlx from

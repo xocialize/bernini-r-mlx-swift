@@ -24,11 +24,15 @@ let package = Package(
         // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
         // other model wrappers; the core `BerniniR` target stays engine-agnostic.
         .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.4.0"),
+        // The neutral Wan substrate (DiT + VAE + umT5 + RoPE + schedulers + loader),
+        // extracted so Helios/Phantom/TI2V-5B share it. Local path during B0; tagged dep later.
+        .package(path: "../wan-core-mlx-swift"),
     ],
     targets: [
         .target(
             name: "BerniniR",
             dependencies: [
+                .product(name: "WanCore", package: "wan-core-mlx-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXNN", package: "mlx-swift"),
                 .product(name: "MLXFast", package: "mlx-swift"),
@@ -41,13 +45,17 @@ let package = Package(
             name: "MLXBerniniR",
             dependencies: [
                 "BerniniR",
+                .product(name: "WanCore", package: "wan-core-mlx-swift"),
                 .product(name: "MLXToolKit", package: "mlx-engine-swift"),
             ],
             path: "Sources/MLXBerniniR"
         ),
         .executableTarget(
             name: "RunBernini",
-            dependencies: ["BerniniR"],
+            dependencies: [
+                "BerniniR",
+                .product(name: "WanCore", package: "wan-core-mlx-swift"),
+            ],
             path: "Sources/RunBernini"
         ),
         .testTarget(
@@ -57,7 +65,10 @@ let package = Package(
         ),
         .testTarget(
             name: "BerniniRTests",
-            dependencies: ["BerniniR"],
+            dependencies: [
+                "BerniniR",
+                .product(name: "WanCore", package: "wan-core-mlx-swift"),
+            ],
             path: "Tests/BerniniRTests",
             resources: [.copy("Fixtures")]
         ),
