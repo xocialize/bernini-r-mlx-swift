@@ -25,6 +25,42 @@ from bernini_r_mlx.config import BerniniRendererConfig
 from mlx_video.models.wan_2.scheduler import FlowUniPCScheduler
 from mlx_video.models.wan_2.utils import load_vae_encoder, load_wan_model
 
+# E11: the stock mlx-video upsample3d ALWAYS doubles every frame (T_lat*4);
+# official Wan2.2 bypasses time_conv for frame 0 of the first chunk ->
+# (T_lat-1)*4+1. Apply the corrected first-chunk rule to the whole-seq decode so
+# the e2e frames golden matches the fixed Swift WanVAE. Same patch as
+# tools/dump_vae_firstchunk_golden.py (ported from helios-branch wan/vae22.py).
+from mlx_video.models.wan_2.vae import Resample
+
+_orig_resample_call = Resample.__call__
+
+
+def _patched_resample_call(self, x, feat_cache=None, feat_idx=None):
+    if self.mode == "upsample3d" and feat_cache is None:
+        b, c, t, h, w = x.shape
+        if t > 1:
+            first = x[:, :, 0:1]  # frame 0 BYPASSES time_conv
+            rest = x[:, :, 1:]  # [B,C,T-1,H,W]
+            x_t = self.time_conv(rest).reshape(b, 2, c, t - 1, h, w)
+            rest_up = mx.stack([x_t[:, 0], x_t[:, 1]], axis=3).reshape(
+                b, c, (t - 1) * 2, h, w
+            )
+            x = mx.concatenate([first, rest_up], axis=2)  # 1 + (T-1)*2 = 2T-1
+        else:
+            x_t = self.time_conv(x).reshape(b, 2, c, t, h, w)
+            x = mx.stack([x_t[:, 0], x_t[:, 1]], axis=3).reshape(b, c, t * 2, h, w)
+        t2 = x.shape[2]
+        x = x.transpose(0, 2, 3, 4, 1).reshape(b * t2, h, w, c)
+        x = mx.repeat(x, 2, axis=1)
+        x = mx.repeat(x, 2, axis=2)
+        x = self.resample[1](x)
+        c_out = x.shape[-1]
+        return x.reshape(b, t2, h * 2, w * 2, c_out).transpose(0, 4, 1, 2, 3)
+    return _orig_resample_call(self, x, feat_cache, feat_idx)
+
+
+Resample.__call__ = _patched_resample_call
+
 STEPS = 4
 SHIFT = 3.0
 GUIDE_SCALE = (3.0, 4.0)  # (low, high)
