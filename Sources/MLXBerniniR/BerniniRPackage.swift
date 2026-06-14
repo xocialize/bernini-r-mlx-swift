@@ -32,14 +32,17 @@ public final class BerniniRPackage: ModelPackage {
                 tier: 1
             ),
             requirements: RequirementsManifest(
-                // Measured peaks (832x480, 40 steps, 2026-06-12). int4: 58.0 GB GPU-peak at
-                // the 17-frame t2v envelope (CLI) and 76.93 GB process phys_footprint in the
-                // app seam run (5-frame, incl. load transients) -> declare 80 GB. bf16:
-                // 90.8 GB at the t2i envelope; its multi-frame envelope is unmeasured (likely
-                // ~100 GB - re-measure per memory-harness before relying on bf16 t2v admission).
+                // Measured app-seam peak process memory (phys_footprint), the governor's budget
+                // basis. Declarations sit just above the worst measured peak per quant.
+                //   bf16: 110.47 GB — multi-frame t2v (Lightning 4-step, 17f/832x480, 2026-06-13);
+                //     supersedes the earlier 90.8 GB t2i-only figure. -> declare 112 GB. (bf16
+                //     *editing* is unmeasured and would be higher; revisit if bf16 v2v ships.)
+                //   int4: 96.04 GB — v2v APG editing (~20f, 2026-06-13); editing concatenates the
+                //     source as conditioning (~2x tokens) so it far exceeds the 76.93 GB t2v figure
+                //     the old 80 GB declaration was based on. -> declare 98 GB.
                 footprints: [
-                    QuantFootprint(quant: .bf16, residentBytes: 91_000_000_000),
-                    QuantFootprint(quant: .int4, residentBytes: 80_000_000_000),
+                    QuantFootprint(quant: .bf16, residentBytes: 112_000_000_000),
+                    QuantFootprint(quant: .int4, residentBytes: 98_000_000_000),
                 ],
                 requiredBackends: [.metalGPU],
                 os: OSRequirement(minMacOS: SemanticVersion(major: 26, minor: 0, patch: 0)),

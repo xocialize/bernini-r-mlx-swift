@@ -16,6 +16,9 @@ enum FrameEncodeError: Error {
     case pixelBufferAllocation
     case writerSetup(String)
     case pngEncode
+    case badFrames(String)       // rank ≠ 5 or t ≤ 0  (E10 suspect #1)
+    case appendFailed(String)    // adaptor.append == false  (E10 suspect #2)
+    case writeIncomplete(String) // status ≠ .completed or file missing
 }
 
 /// Frame tensor [3, H, W] in [-1, 1] → interleaved RGB bytes [H, W, 3].
@@ -85,6 +88,12 @@ func encodeMP4(frames: MLXArray, fps: Double) async throws -> Data {
     let h = frames.dim(3)
     let w = frames.dim(4)
 
+    // E10: validate the frame tensor BEFORE writer setup so a malformed rv2v output throws a
+    // descriptive error instead of a cryptic ENOENT on the read-back.
+    guard frames.ndim == 5, t > 0, h > 0, w > 0 else {
+        throw FrameEncodeError.badFrames("expected [1,3,T,H,W] with T>0, got shape \(frames.shape)")
+    }
+
     let url = FileManager.default.temporaryDirectory
         .appending(path: "bernini-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: url) }
@@ -127,13 +136,22 @@ func encodeMP4(frames: MLXArray, fps: Double) async throws -> Data {
         while !input.isReadyForMoreMediaData {
             try await Task.sleep(for: .milliseconds(5))
         }
-        adaptor.append(buffer, withPresentationTime: CMTimeMultiply(frameDuration, multiplier: Int32(i)))
+        guard adaptor.append(buffer, withPresentationTime:
+                  CMTimeMultiply(frameDuration, multiplier: Int32(i))) else {
+            throw FrameEncodeError.appendFailed(
+                "frame \(i)/\(t), writer.status=\(writer.status.rawValue), err=\(String(describing: writer.error))")
+        }
     }
 
     input.markAsFinished()
     await writer.finishWriting()
-    if let error = writer.error {
-        throw FrameEncodeError.writerSetup(error.localizedDescription)
+    // E10: a finalize that fails without setting `writer.error` (or appends nothing) leaves no file;
+    // catch that here with the status + shape rather than a bare ENOENT on the read-back.
+    let exists = FileManager.default.fileExists(atPath: url.path)
+    guard writer.status == .completed, exists else {
+        throw FrameEncodeError.writeIncomplete(
+            "status=\(writer.status.rawValue) err=\(String(describing: writer.error)) "
+            + "fileExists=\(exists) frames=\(t) shape=\(frames.shape)")
     }
     return try Data(contentsOf: url)
 }

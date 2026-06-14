@@ -78,3 +78,63 @@ func runS4Gate(modelDir: URL) throws {
         if !pass { exit(1) }
     }
 }
+
+/// Non-square parity gate (RunBernini --s4-ns-gate): re-runs rv2v + v2v at
+/// NON-SQUARE multi-frame geometry [16,2,16,24] (grid 2,8,12) vs oracle goldens
+/// from `dump_sampling_golden_nonsquare.py`. The square S4 fixture (H==W) can't
+/// catch a height/width-axis bug; the in-app rv2v vertical-mirror appears only
+/// at non-square. Diverge here = port bug (bisect forwardMultiseg grid/RoPE);
+/// match = the artifact is model/over-guidance behavior, not a port defect.
+func runS4NonSquareGate(modelDir: URL) throws {
+    try Device.withDefaultDevice(.cpu) {
+        print("[s4-ns-gate] loading dual experts (CPU stream)…")
+        let renderer = try BerniniRendererModel.fromPretrained(modelDir: modelDir)
+        let high = renderer.highNoiseExpert
+        let low = renderer.lowNoiseExpert
+        let boundary = renderer.boundaryTimestep
+
+        let noise = try fixture("sampling_ns_noise")  // [16,2,16,24]
+        let ref = try fixture("sampling_ns_ref")  // [16,1,16,24]
+        let video = try fixture("sampling_ns_video")  // [16,2,16,24]
+        let ctxCondRaw = try fixture("sampling_ns_ctx_cond_raw")
+        let ctxNullRaw = try fixture("sampling_ns_ctx_null_raw")
+
+        let condHigh = high.embedText([ctxCondRaw])
+        let condLow = low.embedText([ctxCondRaw])
+        let uncondHigh = high.embedText([ctxNullRaw])
+        let uncondLow = low.embedText([ctxNullRaw])
+        eval(condHigh, condLow, uncondHigh, uncondLow)
+
+        let target = [16, 2, 16, 24]
+
+        print("[s4-ns-gate] rv2v (non-square)…")
+        let outRV2V = cfgEditSample(
+            high: high, low: low, guidanceMode: .rv2v,
+            videoLatents: [video], refLatents: [ref],
+            condCtxHigh: condHigh, condCtxLow: condLow,
+            uncondCtxHigh: uncondHigh, uncondCtxLow: uncondLow,
+            targetShape: target, headDim: 128,
+            boundaryTimestep: boundary, steps: 4, injectedNoise: noise)
+        let dRV2V = try maxAbs(outRV2V, fixture("sampling_ns_rv2v_final"))
+        print("  rv2v NS final max_abs = \(dRV2V)  (gate 0.05)")
+
+        print("[s4-ns-gate] v2v control (non-square)…")
+        let outV2V = cfgEditSample(
+            high: high, low: low, guidanceMode: .v2v,
+            videoLatents: [video], refLatents: [],
+            condCtxHigh: condHigh, condCtxLow: condLow,
+            uncondCtxHigh: uncondHigh, uncondCtxLow: uncondLow,
+            targetShape: target, headDim: 128,
+            boundaryTimestep: boundary, steps: 4, injectedNoise: noise)
+        let dV2V = try maxAbs(outV2V, fixture("sampling_ns_v2v_final"))
+        print("  v2v  NS final max_abs = \(dV2V)  (gate 0.05)")
+
+        let pass = dRV2V <= 0.05 && dV2V <= 0.05
+        print(pass
+            ? "[s4-ns-gate] PASS — Swift matches oracle at non-square → port is faithful; "
+              + "the rv2v artifact is model/over-guidance, NOT a port bug."
+            : "[s4-ns-gate] FAIL — Swift DIVERGES from oracle at non-square → "
+              + "geometry-dependent PORT BUG (bisect forwardMultiseg grid/RoPE).")
+        if !pass { exit(1) }
+    }
+}

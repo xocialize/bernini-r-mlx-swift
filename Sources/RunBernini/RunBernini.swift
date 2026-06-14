@@ -106,6 +106,10 @@ struct RunBernini {
             try runS4Gate(modelDir: modelDir)
             return
         }
+        if CommandLine.arguments.contains("--s4-ns-gate") {
+            try runS4NonSquareGate(modelDir: modelDir)
+            return
+        }
         if CommandLine.arguments.contains("--s5-gate") {
             try runS5Gate(modelDir: modelDir)
             return
