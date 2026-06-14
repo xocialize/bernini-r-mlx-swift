@@ -132,6 +132,30 @@ private func onCPU<T>(_ body: () throws -> T) rethrows -> T {
         }
     }
 
+    // — E11: VAE first-chunk frame-0 skip — corrected decode golden —
+    // The stock mlx-video upsample3d always-doubled (T_lat*4 frames); official
+    // Wan2.2 bypasses time_conv for frame 0 of the first chunk -> (T_lat-1)*4+1.
+    // Golden from tools/dump_vae_firstchunk_golden.py (patched real-weight decode).
+
+    @Test func vaeFirstChunkSkipMatchesCorrectedGolden() throws {
+        guard weightsAvailable(),
+              let z = fixture("vae_fc_z"),  // [16, 3, 8, 8] = [C, T_lat=3, H, W]
+              let expFrames = fixture("vae_fc_frames") else { return }  // [1, 3, 9, 64, 64]
+        try onCPU {
+            let vae = WanVAE(zDim: 16, encoder: true)
+            let weights = try MLX.loadArrays(url: ckptURL("vae.safetensors"))
+            try vae.update(
+                parameters: ModuleParameters.unflattened(weights),
+                verify: [.noUnusedKeys])
+            let y = vae.decode(z.expandedDimensions(axis: 0))
+            eval(y)
+            // T_lat=3 -> official (3-1)*4+1 = 9 frames (the stock bug gave 12).
+            #expect(y.dim(2) == 9, "frame count \(y.dim(2)), expected 9 = (T_lat-1)*4+1")
+            let d = maxAbs(y, expFrames)
+            #expect(d <= 5e-3, "vae first-chunk decode max_abs=\(d)")
+        }
+    }
+
     // — umT5: full 24-layer forward on real weights (fp32, like the oracle) —
 
     @Test func t5FeaturesMatchOracle() throws {
