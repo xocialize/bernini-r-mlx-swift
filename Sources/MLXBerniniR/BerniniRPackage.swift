@@ -80,7 +80,8 @@ public final class BerniniRPackage: ModelPackage {
     }
 
     private let configuration: Configuration
-    /// The resident pipeline (dual experts + VAE + umT5 + tokenizer), paged in by `load()`.
+    /// The resident pipeline (dual experts + VAE + tokenizer), paged in by `load()`.
+    /// umT5 is NOT resident — paged in per request and evicted before denoise (§2.4).
     private var pipeline: BerniniPipeline?
 
     public nonisolated init(configuration: Configuration) {

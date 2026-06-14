@@ -13,13 +13,19 @@ import MLXRandom
 extension BerniniPipeline {
 
     /// Pre-embedded cond/uncond UMT5 contexts per expert (the oracle's `_edit_setup` text half).
-    private func editContexts(prompt: String, negative: String)
+    private func editContexts(prompt: String, negative: String) throws
         -> (condHigh: MLXArray, condLow: MLXArray, uncondHigh: MLXArray, uncondLow: MLXArray)
     {
-        let rawC = encodeText(
-            encoder: textEncoder, tokenizer: tokenizer, prompt: prompt, textLen: config.textLen)
-        let rawU = encodeText(
-            encoder: textEncoder, tokenizer: tokenizer, prompt: negative, textLen: config.textLen)
+        // §2.4: umT5 encode under eviction; `embedText` below uses the renderer, not umT5,
+        // so the encoder is released before the (renderer-side) embed + sampling.
+        let (rawC, rawU) = try withTextEncoder { enc -> (MLXArray, MLXArray) in
+            let c = encodeText(
+                encoder: enc, tokenizer: tokenizer, prompt: prompt, textLen: config.textLen)
+            let u = encodeText(
+                encoder: enc, tokenizer: tokenizer, prompt: negative, textLen: config.textLen)
+            eval(c, u)
+            return (c, u)
+        }
         let high = renderer.highNoiseExpert
         let low = renderer.lowNoiseExpert
         let ctx = (high.embedText([rawC]), low.embedText([rawC]),
@@ -60,7 +66,7 @@ extension BerniniPipeline {
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
         let negative = negativePrompt ?? config.sampleNegPrompt
-        let ctx = editContexts(prompt: prompt, negative: negative)
+        let ctx = try editContexts(prompt: prompt, negative: negative)
         let refLatents = encodeRefs(referencePixels)
 
         let latent = try r2vSample(
@@ -98,7 +104,7 @@ extension BerniniPipeline {
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
         let negative = negativePrompt ?? config.sampleNegPrompt
-        let ctx = editContexts(prompt: prompt, negative: negative)
+        let ctx = try editContexts(prompt: prompt, negative: negative)
         let videoLatents = [vae.encode(sourceVideoPixels)[0]]
         let refLatents = encodeRefs(referencePixels)
 

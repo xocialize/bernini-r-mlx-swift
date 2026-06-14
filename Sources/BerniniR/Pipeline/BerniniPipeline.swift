@@ -15,20 +15,22 @@ public final class BerniniPipeline: @unchecked Sendable {
     public let config: WanConfig
     public let renderer: BerniniRendererModel
     public let vae: WanVAE
-    public let textEncoder: UMT5EncoderModel
+    /// Checkpoint dir — kept so umT5 can be (re)loaded on demand per request and
+    /// evicted before denoise (the §2.4 T5-eviction lever), rather than held resident.
+    public let modelDir: URL
     public let tokenizer: any Tokenizer
 
     public init(
         config: WanConfig,
         renderer: BerniniRendererModel,
         vae: WanVAE,
-        textEncoder: UMT5EncoderModel,
+        modelDir: URL,
         tokenizer: any Tokenizer
     ) {
         self.config = config
         self.renderer = renderer
         self.vae = vae
-        self.textEncoder = textEncoder
+        self.modelDir = modelDir
         self.tokenizer = tokenizer
     }
 
@@ -56,20 +58,41 @@ public final class BerniniPipeline: @unchecked Sendable {
             parameters: ModuleParameters.unflattened(vaeWeights),
             verify: [.noUnusedKeys])
 
+        // umT5 is NOT loaded here — it's paged in per request and evicted before
+        // denoise (see `withTextEncoder`), so it never co-resides with the heavy
+        // denoise activations. Only the renderer + VAE stay resident.
+        let tokenizer = try await AutoTokenizer.from(pretrained: umt5TokenizerRepo)
+        return BerniniPipeline(
+            config: config, renderer: renderer, vae: vae,
+            modelDir: modelDir, tokenizer: tokenizer)
+    }
+
+    /// Load the fp32 umT5 encoder from the checkpoint (fp32 like mlx-video's
+    /// `load_t5_encoder`). Loaded on demand, not held resident.
+    private func loadTextEncoder() throws -> UMT5EncoderModel {
         let textEncoder = UMT5EncoderModel.fromConfig(config)
         let t5Weights = try WeightLoader.loadVerifiedSafetensors(
             url: modelDir.appendingPathComponent("t5_encoder.safetensors"),
             expectedKeys: BerniniWeightKeys.t5Keys(layers: config.t5NumLayers)
-        ).mapValues { $0.asType(.float32) }  // fp32 like mlx-video's load_t5_encoder
+        ).mapValues { $0.asType(.float32) }
         WeightLoader.materialize(t5Weights)
         try textEncoder.update(
             parameters: ModuleParameters.unflattened(t5Weights),
             verify: [.noUnusedKeys])
+        return textEncoder
+    }
 
-        let tokenizer = try await AutoTokenizer.from(pretrained: umt5TokenizerRepo)
-        return BerniniPipeline(
-            config: config, renderer: renderer, vae: vae,
-            textEncoder: textEncoder, tokenizer: tokenizer)
+    /// §2.4 T5 eviction: load umT5, run `body` to produce its text contexts, then
+    /// drop the encoder and reclaim its ~22 GB fp32 working set before returning —
+    /// so the denoise loop never co-resides with the encoder.
+    /// ⚠️ `body` MUST `eval` everything it returns; an un-eval'd lazy graph would
+    /// keep the encoder weights alive past the `clearCache`, defeating the eviction.
+    func withTextEncoder<R>(_ body: (UMT5EncoderModel) throws -> R) throws -> R {
+        var encoder: UMT5EncoderModel? = try loadTextEncoder()
+        let result = try body(encoder!)
+        encoder = nil                 // drop the only strong ref → weights deallocate
+        MLX.GPU.clearCache()          // return the freed buffers to the OS
+        return result
     }
 
     /// Text-to-video. Returns decoded frames [1, 3, T, H, W] in [-1, 1].
@@ -90,13 +113,15 @@ public final class BerniniPipeline: @unchecked Sendable {
     ) throws -> MLXArray {
         let negative = negativePrompt ?? config.sampleNegPrompt
 
-        let contextCond = encodeText(
-            encoder: textEncoder, tokenizer: tokenizer, prompt: prompt,
-            textLen: config.textLen)
-        let contextNull = encodeText(
-            encoder: textEncoder, tokenizer: tokenizer, prompt: negative,
-            textLen: config.textLen)
-        eval(contextCond, contextNull)
+        // §2.4: page umT5 in, encode cond/uncond, evict it before denoise.
+        let (contextCond, contextNull) = try withTextEncoder { enc -> (MLXArray, MLXArray) in
+            let c = encodeText(
+                encoder: enc, tokenizer: tokenizer, prompt: prompt, textLen: config.textLen)
+            let n = encodeText(
+                encoder: enc, tokenizer: tokenizer, prompt: negative, textLen: config.textLen)
+            eval(c, n)
+            return (c, n)
+        }
 
         // Latent geometry from the VAE strides (temporal 1 + (F-1)/4, spatial /8)
         let tLat = (numFrames - 1) / config.vaeStride[0] + 1
