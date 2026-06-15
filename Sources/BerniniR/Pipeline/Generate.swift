@@ -43,10 +43,13 @@ public struct T2VOptions: Sendable {
     }
 
     public static func fromConfig(_ config: WanConfig) -> T2VOptions {
-        T2VOptions(
+        // A14B ships [low, high]; the dense 1.3B tier ships a single scalar — the
+        // one expert uses it for both phases (no boundary switch).
+        let gs = config.sampleGuideScale
+        return T2VOptions(
             steps: config.sampleSteps,
             shift: config.sampleShift,
-            guideScale: (config.sampleGuideScale[0], config.sampleGuideScale[1]))
+            guideScale: (gs[0], gs.count > 1 ? gs[1] : gs[0]))
     }
 
     /// lightx2v Wan2.2-Lightning 4-step recipe: euler · shift 5.0 · CFG-free.
