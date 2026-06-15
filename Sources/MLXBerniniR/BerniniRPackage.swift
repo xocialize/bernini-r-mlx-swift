@@ -38,12 +38,15 @@ public final class BerniniRPackage: ModelPackage {
                 //   bf16: 110.47 GB — multi-frame t2v (Lightning 4-step, 17f/832x480, 2026-06-13);
                 //     supersedes the earlier 90.8 GB t2i-only figure. -> declare 112 GB. (bf16
                 //     *editing* is unmeasured and would be higher; revisit if bf16 v2v ships.)
-                //   int4: 96.04 GB — v2v APG editing (~20f, 2026-06-13); editing concatenates the
-                //     source as conditioning (~2x tokens) so it far exceeds the 76.93 GB t2v figure
-                //     the old 80 GB declaration was based on. -> declare 98 GB.
+                //   int4: 66.22 GB — rv2v APG editing (heaviest path, 4 fwd/step), clean standalone
+                //     app re-measure 2026-06-14 AFTER the §2.4 umT5 post-encode eviction. Supersedes
+                //     the 96.04 GB pre-eviction figure: releasing umT5 before the heavy 2x-token concat
+                //     forward (+ a contamination-free baseline) drops the peak ~30 GB. -> declare 67 GB.
+                //     This lands int4 editing UNDER the 0.7x production budget (96.2 GB) — un-blocks §3.1
+                //     (the package was un-admittable at 98 GB).
                 footprints: [
                     QuantFootprint(quant: .bf16, residentBytes: 112_000_000_000),
-                    QuantFootprint(quant: .int4, residentBytes: 98_000_000_000),
+                    QuantFootprint(quant: .int4, residentBytes: 67_000_000_000),
                 ],
                 requiredBackends: [.metalGPU],
                 os: OSRequirement(minMacOS: SemanticVersion(major: 26, minor: 0, patch: 0)),
