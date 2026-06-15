@@ -57,6 +57,20 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable {
         BerniniRConfiguration(repo: "mlx-community/Wan2.2-T2V-A14B-Lightning", lightning: true)
     }
 
+    /// The LOWEST tier — Bernini-R-1.3B (Wan2.1-1.3B dense backbone, `dual_model:false`).
+    /// One resident `WanModel` (~2.8 GB bf16) + the 16-ch WanVAE → ~3.6 GB active working
+    /// set (measured via `RunBernini` t2i). Same editing surfaces (SA-3D RoPE / APG),
+    /// smaller backbone. ⚠️ The package manifest still declares the A14B footprints — a
+    /// distinct 1.3B PackageID with per-variant requirements is the follow-up before this
+    /// can be admitted on the small machines this tier is FOR.
+    public static var oneThreeB: BerniniRConfiguration {
+        BerniniRConfiguration(repo: "mlx-community/Bernini-R-1.3B-bf16")
+    }
+
+    public static var oneThreeBInt4: BerniniRConfiguration {
+        BerniniRConfiguration(repo: "mlx-community/Bernini-R-1.3B-int4", quant: .int4)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case repo, revision, quant, lightning
     }
