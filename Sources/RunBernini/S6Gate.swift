@@ -67,7 +67,7 @@ func runS6Gate(bf16Dir: URL, int4Dir: URL) throws {
             eval(out)
             return out
         }()
-        MLX.GPU.clearCache()
+        MLX.Memory.clearCache()
 
         print("[s6-gate] loading int4 high expert…")
         let int4 = try loadExpert(int4Dir, quantized: true)

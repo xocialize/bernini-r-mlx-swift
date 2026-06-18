@@ -169,7 +169,8 @@ public func denoiseT2V(
         eval(latents)
         // Metal buffer-cache discipline for the multi-hour production configs:
         // freed per-step workspace otherwise ratchets RSS until SIGKILL.
-        MLX.GPU.clearCache()
+        MLX.Memory.clearCache()
+        WanDebug.stats("denoise step \(i + 1)/\(options.steps)", latents)  // WAN_DEBUG_STATS (W6: int4 40-step zeroing)
         try onStep?(i, options.steps, latents)
     }
 

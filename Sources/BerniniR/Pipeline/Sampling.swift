@@ -152,7 +152,7 @@ public func r2vSample(
 
         latent = sched.step(modelOutput: vGuided, timestep: Float(t), sample: latent)
         eval(latent)
-        MLX.GPU.clearCache()
+        MLX.Memory.clearCache()
         try onStep?(i, steps, latent)
     }
     return latent
@@ -263,7 +263,7 @@ public func cfgEditSample(
 
         latent = sched.step(modelOutput: noisePred, timestep: Float(t), sample: latent)
         eval(latent)
-        MLX.GPU.clearCache()
+        MLX.Memory.clearCache()
         try onStep?(i, steps, latent)
     }
     return latent

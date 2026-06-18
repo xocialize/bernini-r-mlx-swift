@@ -91,7 +91,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         var encoder: UMT5EncoderModel? = try loadTextEncoder()
         let result = try body(encoder!)
         encoder = nil                 // drop the only strong ref → weights deallocate
-        MLX.GPU.clearCache()          // return the freed buffers to the OS
+        MLX.Memory.clearCache()          // return the freed buffers to the OS
         return result
     }
 
