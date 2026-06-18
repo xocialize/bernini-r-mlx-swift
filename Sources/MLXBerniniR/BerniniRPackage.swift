@@ -136,12 +136,30 @@ public final class BerniniRPackage: ModelPackage {
 
     // MARK: - Surfaces
 
+    /// W6 guard: Bernini **int4** on the 40-step UniPC "quality" path renders **all-black** (a numerical
+    /// failure in the int4 UniPC trajectory — there is no int4-specific scheduler branching; `.fast`
+    /// (DPM++/16) is the validated/published int4 path). The default mode resolves to UniPC/40, so an
+    /// int4 user who does nothing would silently get a ~96-min black clip. Until a root cause lands,
+    /// auto-fall-back int4 "quality"→"fast" with a stderr warning. `BERNINI_ALLOW_INT4_QUALITY=1` forces
+    /// the 40-step path (for debugging, e.g. with `WAN_DEBUG_STATS`). bf16/Lightning are unaffected.
+    private func guardInt4Quality(
+        _ sampling: (scheduler: SchedulerKind, steps: Int?)
+    ) -> (scheduler: SchedulerKind, steps: Int?) {
+        guard configuration.quant == .int4, sampling.scheduler == .unipc,
+              ProcessInfo.processInfo.environment["BERNINI_ALLOW_INT4_QUALITY"] == nil
+        else { return sampling }
+        FileHandle.standardError.write(Data(
+            ("[Bernini] int4 + 40-step \"quality\" (UniPC) renders all-black (W6) — falling back to "
+             + ".fast (DPM++/16). Set BERNINI_ALLOW_INT4_QUALITY=1 to force the quality path.\n").utf8))
+        return resolveSampling(mode: .fast, steps: nil)
+    }
+
     private func runT2I(_ request: T2IRequest, pipeline: BerniniPipeline) throws -> T2IResponse {
         try Task.checkCancellation()
         // Lightning config → the fixed 4-step CFG-free sampler (overrides mode/steps).
         // Otherwise `.fast` mode → DPM++/16, else the 40-step UniPC default.
         let lit = configuration.lightning
-        let sampling = resolveSampling(mode: request.mode, steps: request.steps)
+        let sampling = guardInt4Quality(resolveSampling(mode: request.mode, steps: request.steps))
         let frames = try pipeline.t2i(
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,
@@ -193,8 +211,9 @@ public final class BerniniRPackage: ModelPackage {
         }
 
         // Plain t2v. Lightning config → fixed 4-step CFG-free; else `.fast`→DPM++/16, else UniPC/40.
+        // W6: int4 + UniPC/40 is all-black → guardInt4Quality auto-falls-back to .fast.
         let lit = configuration.lightning
-        let sampling = resolveSampling(mode: request.mode, steps: request.steps)
+        let sampling = guardInt4Quality(resolveSampling(mode: request.mode, steps: request.steps))
         let frames = try pipeline.t2v(
             prompt: request.prompt,
             negativePrompt: request.negativePrompt,
