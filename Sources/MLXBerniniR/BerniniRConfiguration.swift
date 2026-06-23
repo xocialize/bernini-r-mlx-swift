@@ -13,7 +13,7 @@ import MLXToolKit
 ///   3. HF download of `repo` into the local cache (`WeightLoader.snapshotDownload`)
 /// `modelsRootDirectory` is the engine-store seam (`ModelStorable`); auto-materializing into it
 /// is the next additive step, mirroring the other wrappers' V1 posture.
-public struct BerniniRConfiguration: PackageConfiguration, ModelStorable {
+public struct BerniniRConfiguration: PackageConfiguration, ModelStorable, QuantConfigured {
     /// Published variant repo id (also the provenance source).
     public var repo: String
     public var revision: String?
