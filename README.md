@@ -62,4 +62,10 @@ fp32 umT5 resident; memory flat across steps).
 Targets: `BerniniR` (engine-agnostic core) · `MLXBerniniR` (MLXEngine `ModelPackage` wrapper,
 `textToVideo` + `textToImage`).
 
+> **Optional prompt enhancer:** upstream Bernini's `prompt_enhancer.py` (Apache-2.0) is a
+> model-agnostic, host-side LLM prompt rewriter with Wan2.2-A14B-tuned templates — reusable across the
+> Wan family by pointing it at a **local** OpenAI-compatible endpoint (⚠ strip its baked-in content-policy
+> rules first). Roadmapped as `WAN_TESTING/ENHANCEMENTS.md` **item 3.3** — design + phases in
+> [`companion/ENH-wan-prompt-enhancer.md`](../WAN_TESTING/companion/ENH-wan-prompt-enhancer.md).
+
 License: Apache-2.0 (Bernini, Wan2.2 acknowledged upstream — see NOTICE).
