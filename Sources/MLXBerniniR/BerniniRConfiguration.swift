@@ -75,3 +75,17 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable, QuantC
         case repo, revision, quant, lightning
     }
 }
+
+/// Cold-start weight prewarm (engine ≥0.7.0): page the resolved checkpoint into the OS file cache
+/// before `load()` runs its GPU evals, so the cold load-time `eval` never faults weights off
+/// slow/external storage inside a live Metal command buffer (the cold-load GPU watchdog,
+/// `kIOGPUCommandBufferCallbackErrorTimeout`). The acute case is a cold Bernini **bf16** load
+/// (~64 GB off the archive volume); small/int4 variants are unlikely to bite. Each published
+/// variant lives in its OWN flat directory (`ckpt-{bf16,int4,lightning}`), so — unlike LTX's
+/// co-located transformers — paging the whole resolved `modelDirectory` already loads only the
+/// files this variant uses (no exclusion needed). Only the config knows the resolved path;
+/// execution is the engine's (`WeightPrewarmer`, best-effort). Nil when the HF-download path is
+/// used (nothing local to page yet) → prewarm is a no-op.
+extension BerniniRConfiguration: WeightPrewarming {
+    public var prewarmPaths: [URL] { [modelDirectory].compactMap { $0 } }
+}
