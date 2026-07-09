@@ -109,6 +109,9 @@ public final class BerniniRPackage: ModelPackage {
     }
 
     public func run(_ request: any CapabilityRequest) async throws -> any CapabilityResponse {
+        // CAN-1: the entry checkpoint is the FIRST act of run() — before the notLoaded
+        // guard, capability validation, or dispatch (run-lifecycle program, engine 0.27.0).
+        try Task.checkCancellation()
         guard let pipeline else { throw PackageError.notLoaded }
         switch request.capability {
         case .textToImage:
@@ -175,6 +178,9 @@ public final class BerniniRPackage: ModelPackage {
         ) { _, _, _ in
             try Task.checkCancellation()  // C13: per-denoising-step cancellation
         }
+        // Post-core checkpoint: the streaming VAE decode inside the pipeline bails per
+        // chunk (non-throwing) — discard a truncated result and rethrow here.
+        try Task.checkCancellation()
         // The 16-ch Wan VAE decodes 4 output frames per latent frame (oracle behavior,
         // parity-matched); the still is frame 0.
         let (data, width, height) = try encodePNG(frame: frames[0, 0..., 0, 0..., 0...])
@@ -207,6 +213,8 @@ public final class BerniniRPackage: ModelPackage {
                 width: width, height: height, numFrames: numFrames,
                 steps: request.steps ?? 40, seed: request.seed ?? 42
             ) { _, _, _ in try Task.checkCancellation() }
+            // Post-core checkpoint: streaming VAE decode bails per chunk (non-throwing).
+            try Task.checkCancellation()
             return try await framesToVideoResponse(frames, fps: fps)
         }
 
@@ -228,6 +236,8 @@ public final class BerniniRPackage: ModelPackage {
         ) { _, _, _ in
             try Task.checkCancellation()  // C13: per-denoising-step cancellation
         }
+        // Post-core checkpoint: streaming VAE decode bails per chunk (non-throwing).
+        try Task.checkCancellation()
         return try await framesToVideoResponse(frames, fps: fps)
     }
 

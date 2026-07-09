@@ -21,9 +21,10 @@ let package = Package(
         .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.30.0"),
         // Tokenizers (umT5 sentencepiece) only; weight download is our own loader.
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
-        // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
-        // other model wrappers; the core `BerniniR` target stays engine-agnostic.
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.9.1"),
+        // MLXEngine contract (MLXToolKit) for the wrapper target; ≥0.27.0 for the CAN
+        // cancellation gate (MLXServeConformance.CancellationConformance). The core
+        // `BerniniR` target stays engine-agnostic.
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.27.0"),
         // The neutral Wan substrate (DiT + VAE + umT5 + RoPE + schedulers + loader),
         // extracted so Helios/Phantom/TI2V-5B share it. Local path during B0; tagged dep later.
         .package(path: "../wan-core-mlx-swift"),
@@ -60,7 +61,10 @@ let package = Package(
         ),
         .testTarget(
             name: "MLXBerniniRTests",
-            dependencies: ["MLXBerniniR"],
+            dependencies: [
+                "MLXBerniniR",
+                .product(name: "MLXServeConformance", package: "mlx-engine-swift"),
+            ],
             path: "Tests/MLXBerniniRTests"
         ),
         .testTarget(

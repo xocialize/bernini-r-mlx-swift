@@ -1,0 +1,48 @@
+// CancellationTests.swift — Bernini-R through the engine's CAN gate (offline, no MLX
+// kernels). CAN-1/2 drive the real run() pre-cancelled (the entry checkpoint fires before
+// the notLoaded guard or weights); CAN-3 is the document of record for the checkpoint
+// cadence: every sampler path (t2v / t2i / r2v / v2v / rv2v) threads a throwing `onStep`
+// closure — `try Task.checkCancellation()` once per denoising step (BerniniRPackage.swift,
+// all pipeline call sites) — and the wan-core streaming VAE decode bails per temporal
+// chunk (`Task.isCancelled` in WanCore decodeStreaming), with the wrapper's post-core
+// `try Task.checkCancellation()` discarding a truncated result and rethrowing unchanged.
+
+import Foundation
+import MLXServeConformance
+import MLXToolKit
+import XCTest
+@testable import MLXBerniniR
+
+final class CancellationTests: XCTestCase {
+
+    // MARK: - CAN-1 / CAN-2 — pre-cancelled run() propagation + classification
+
+    func testCANGatePreCancelledRun() async {
+        // Stub config; construction is cheap (C13) and the entry checkpoint throws before
+        // validation or weights are touched, so this is offline-safe.
+        let package = BerniniRPackage(configuration: BerniniRConfiguration())
+        let report = await CancellationConformance.checkRun(
+            package: package,
+            request: T2VRequest(prompt: "probe"))
+        XCTAssertTrue(report.passed, report.summary)
+    }
+
+    // MARK: - CAN-3 — checkpoint-cadence declaration (the document of record)
+
+    func testCANCadenceDeclaration() {
+        // textToVideo + videoEdit are long-run capabilities — no sub-second exemption.
+        XCTAssertTrue(CancellationConformance.longRunImplied(by: BerniniRPackage.manifest))
+
+        let report = CancellationConformance.checkCadence(
+            manifest: BerniniRPackage.manifest,
+            posture: .cadence([
+                // Per denoising step: the throwing onStep closure threaded into every
+                // pipeline sampler call (t2v/t2i/r2v/v2v/rv2v — BerniniRPackage.swift).
+                .init(phase: .denoise, unit: .step),
+                // Per VAE-decode temporal chunk: wan-core decodeStreaming bails on
+                // Task.isCancelled; the wrapper's post-core checkpoint rethrows.
+                .init(phase: .decode, unit: .chunk),
+            ]))
+        XCTAssertTrue(report.passed, report.summary)
+    }
+}
