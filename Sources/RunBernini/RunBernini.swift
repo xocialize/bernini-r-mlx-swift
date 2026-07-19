@@ -84,7 +84,8 @@ func decodeRefImage(_ path: String, width: Int, height: Int) throws -> MLXArray 
         bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.interpolationQuality = .high
-    ctx.translateBy(x: 0, y: CGFloat(height)); ctx.scaleBy(x: 1, y: -1)
+    // W9: no vertical flip — a CGBitmapContext already stores row 0 = top, matching
+    // FrameEncode's convention. Keep in sync with MLXBerniniR/FrameDecode.rgbCHW (duplicated logic).
     ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
     let plane = height * width
     var chw = [Float](repeating: 0, count: 3 * plane)
