@@ -92,17 +92,14 @@ func decodeRefImage(_ path: String, width: Int, height: Int) throws -> MLXArray 
         bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.interpolationQuality = .high
-    ctx.translateBy(x: 0, y: CGFloat(height)); ctx.scaleBy(x: 1, y: -1)
+    // W9: no vertical flip — a CGBitmapContext already stores row 0 = top, matching
+    // FrameEncode's convention. Keep in sync with MLXBerniniR/FrameDecode.rgbCHW (duplicated logic).
     ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
     let plane = height * width
     var chw = [Float](repeating: 0, count: 3 * plane)
     for y in 0..<height {
-        // The CGContext y-flip above already draws top-down into `rgba`; reading it straight
-        // (as r2v did) yields a vertically-flipped tensor vs writePNG's convention (verified via
-        // i2v: content correct, image upside-down). Mirror the source row to match writePNG.
-        let srcY = height - 1 - y
         for x in 0..<width {
-            let p = (srcY * width + x) * 4, i = y * width + x
+            let p = (y * width + x) * 4, i = y * width + x
             chw[i] = Float(rgba[p]) / 255 * 2 - 1
             chw[plane + i] = Float(rgba[p + 1]) / 255 * 2 - 1
             chw[2 * plane + i] = Float(rgba[p + 2]) / 255 * 2 - 1

@@ -18,31 +18,28 @@ enum FrameDecodeError: Error {
     case videoNoFrames
 }
 
-/// CGImage → top-down RGB float [3, H, W] in [-1, 1]. The CGContext is
-/// bottom-up, so we flip vertically to match PIL/top-down (a reference image
-/// fed upside-down would condition the wrong orientation).
-private func rgbCHW(_ cg: CGImage, width: Int, height: Int) -> [Float] {
+/// CGImage → RGB float [3, H, W] in [-1, 1], read row 0 = image top — matching the pipeline's
+/// decode/output convention (`FrameEncode` writes latent row 0 → video row 0, no flip; t2v output
+/// is correctly oriented). W9: a prior explicit vertical flip here (`translateBy(height)` +
+/// `scaleBy(y:-1)`) was the ONLY flip in the conditioned path, so r2v/v2v/rv2v reference frames
+/// entered upside-down vs t2v/decode — the same one-helper bug as W8 in VACE (vace `3014274`) and
+/// Phantom, which this port did not receive. A `CGBitmapContext` already stores row 0 = top, so
+/// drawing the CGImage straight into this `premultipliedLast` context yields the top-down raster
+/// the rest of the pipeline uses; no flip is applied.
+func rgbCHW(_ cg: CGImage, width: Int, height: Int) -> [Float] {
     var rgba = [UInt8](repeating: 0, count: width * height * 4)
     let ctx = CGContext(
         data: &rgba, width: width, height: height, bitsPerComponent: 8,
         bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.interpolationQuality = .high  // ≈ bicubic, matching PIL.BICUBIC
-    // Flip to top-down: translate up then scale y by -1 before drawing.
-    ctx.translateBy(x: 0, y: CGFloat(height))
-    ctx.scaleBy(x: 1, y: -1)
     ctx.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
 
     var chw = [Float](repeating: 0, count: 3 * height * width)
     let plane = height * width
     for y in 0..<height {
-        // The CGContext y-flip above draws top-down into `rgba`; reading it straight still yields a
-        // vertically-flipped tensor vs FrameEncode/writePNG's convention (verified via AnimeGen-I2V:
-        // frame-0 content correct but upside-down). Mirror the source row so the orientation matches
-        // the decode output (also corrects r2v/v2v reference orientation).
-        let srcY = height - 1 - y
         for x in 0..<width {
-            let p = (srcY * width + x) * 4
+            let p = (y * width + x) * 4
             let i = y * width + x
             chw[i] = Float(rgba[p]) / 255 * 2 - 1  // R
             chw[plane + i] = Float(rgba[p + 1]) / 255 * 2 - 1  // G
@@ -52,7 +49,7 @@ private func rgbCHW(_ cg: CGImage, width: Int, height: Int) -> [Float] {
     return chw
 }
 
-private func cgImage(from data: Data) throws -> CGImage {
+func cgImage(from data: Data) throws -> CGImage {
     guard let src = CGImageSourceCreateWithData(data as CFData, nil),
           let cg = CGImageSourceCreateImageAtIndex(src, 0, nil)
     else { throw FrameDecodeError.imageDecode }
