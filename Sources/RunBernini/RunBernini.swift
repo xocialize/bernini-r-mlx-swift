@@ -41,7 +41,14 @@ let steps = argValue("--steps").flatMap(Int.init) ?? 40
 let seed = argValue("--seed").flatMap(UInt64.init) ?? 42
 let solver = argValue("--solver").flatMap(SchedulerKind.init(rawValue:)) ?? .unipc
 let lightning = CommandLine.arguments.contains("--lightning")
+// AnimeGen-T2V recipe (aidealab): CFG-free · euler · 8 steps · shift 3.0.
+// The merged AnimeGen Lightning checkpoint (lightx2v 250928 LoRA @ [high 2.0,
+// low 1.0]) only works few-step, like Bernini's own Lightning. --shift overrides.
+let animegen = CommandLine.arguments.contains("--animegen")
+let shiftArg = argValue("--shift").flatMap(Double.init)
 let r2vRef = argValue("--r2v")  // reference image path → r2v (subject-consistent t2v)
+// AnimeGen-I2V: conditioning image path → channel-concat i2v (in_dim=36, CFG-free 4-step/shift-3.0).
+let i2vRef = argValue("--i2v")
 let modelDir = URL(
     filePath: argValue("--model-dir")
         ?? "/Volumes/DEV_ARCHIVE/weights/bernini-r-mlx-weights/ckpt-bf16")
@@ -90,8 +97,12 @@ func decodeRefImage(_ path: String, width: Int, height: Int) throws -> MLXArray 
     let plane = height * width
     var chw = [Float](repeating: 0, count: 3 * plane)
     for y in 0..<height {
+        // The CGContext y-flip above already draws top-down into `rgba`; reading it straight
+        // (as r2v did) yields a vertically-flipped tensor vs writePNG's convention (verified via
+        // i2v: content correct, image upside-down). Mirror the source row to match writePNG.
+        let srcY = height - 1 - y
         for x in 0..<width {
-            let p = (y * width + x) * 4, i = y * width + x
+            let p = (srcY * width + x) * 4, i = y * width + x
             chw[i] = Float(rgba[p]) / 255 * 2 - 1
             chw[plane + i] = Float(rgba[p + 1]) / 255 * 2 - 1
             chw[2 * plane + i] = Float(rgba[p + 2]) / 255 * 2 - 1
@@ -103,6 +114,7 @@ func decodeRefImage(_ path: String, width: Int, height: Int) throws -> MLXArray 
 @main
 struct RunBernini {
     static func main() async throws {
+        setbuf(stdout, nil)  // unbuffered so the last progress line survives a hard trap
         if CommandLine.arguments.contains("--s4-gate") {
             try runS4Gate(modelDir: modelDir)
             return
@@ -132,7 +144,9 @@ struct RunBernini {
 
         print(
             "Generating \(numFrames) frame(s) @ \(width)x\(height), "
-                + (lightning ? "4 steps, euler (lightning)" : "\(steps) steps, \(solver.rawValue)")
+                + (animegen
+                    ? "\(argValue("--steps").flatMap(Int.init) ?? 8) steps, euler, shift \(shiftArg ?? 3.0) (animegen)"
+                    : lightning ? "4 steps, euler (lightning)" : "\(steps) steps, \(solver.rawValue)")
                 + ", seed \(seed)")
         print("  prompt: \(prompt)")
         let tGen = Date()
@@ -147,13 +161,29 @@ struct RunBernini {
                     Double(GPU.peakMemory) / 1e9))
         }
         let frames: MLXArray
-        if let r2vRef {
+        if let i2vRef {
+            // AnimeGen-I2V: condition on a first frame. CFG-free 4-step/shift-3.0 (or --steps/--shift).
+            print("  i2v conditioning image: \(i2vRef)")
+            let imgPixels = try decodeRefImage(i2vRef, width: width, height: height)
+            frames = try pipeline.i2v(
+                prompt: prompt, imagePixels: imgPixels,
+                width: width, height: height, numFrames: numFrames,
+                steps: argValue("--steps").flatMap(Int.init) ?? 4,
+                shift: shiftArg ?? 3.0, seed: seed, onStep: progress)
+        } else if let r2vRef {
             print("  r2v reference: \(r2vRef)")
             let refPixels = try decodeRefImage(r2vRef, width: width, height: height)
             frames = try pipeline.r2v(
                 prompt: prompt, referencePixels: [refPixels],
                 width: width, height: height, numFrames: numFrames,
                 steps: steps, seed: seed, onStep: progress)
+        } else if animegen {
+            // CFG-free 8-step/shift-3.0 on the merged AnimeGen checkpoint. Honor an
+            // explicit --steps override (else 8); --shift override (else 3.0).
+            frames = try pipeline.t2v(
+                prompt: prompt, width: width, height: height, numFrames: numFrames,
+                steps: argValue("--steps").flatMap(Int.init) ?? 8,
+                shift: shiftArg ?? 3.0, lightning: true, seed: seed, onStep: progress)
         } else {
             frames = try pipeline.t2v(
                 prompt: prompt, width: width, height: height, numFrames: numFrames,

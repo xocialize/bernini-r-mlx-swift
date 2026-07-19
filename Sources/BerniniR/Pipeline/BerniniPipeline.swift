@@ -105,6 +105,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         height: Int = 480,
         numFrames: Int = 49,
         steps: Int? = nil,
+        shift: Double? = nil,
         guideScale: (Double, Double)? = nil,
         scheduler: SchedulerKind? = nil,
         lightning: Bool = false,
@@ -137,6 +138,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         // Lightning checkpoint; otherwise the config-default CFG path.
         var options = lightning ? T2VOptions.lightning : T2VOptions.fromConfig(config)
         if let steps { options.steps = steps }
+        if let shift { options.shift = shift }
         if let guideScale { options.guideScale = guideScale }
         if let scheduler { options.scheduler = scheduler }
 
@@ -163,6 +165,7 @@ public final class BerniniPipeline: @unchecked Sendable {
         width: Int = 832,
         height: Int = 480,
         steps: Int? = nil,
+        shift: Double? = nil,
         guideScale: (Double, Double)? = nil,
         scheduler: SchedulerKind? = nil,
         lightning: Bool = false,
@@ -171,7 +174,7 @@ public final class BerniniPipeline: @unchecked Sendable {
     ) throws -> MLXArray {
         try t2v(
             prompt: prompt, negativePrompt: negativePrompt, width: width,
-            height: height, numFrames: 1, steps: steps, guideScale: guideScale,
+            height: height, numFrames: 1, steps: steps, shift: shift, guideScale: guideScale,
             scheduler: scheduler, lightning: lightning, seed: seed, onStep: onStep)
     }
 }

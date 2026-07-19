@@ -33,7 +33,7 @@ private func rgbBytes(_ frame: MLXArray) -> (bytes: [UInt8], width: Int, height:
 }
 
 /// Encode one frame [3, H, W] as PNG.
-func encodePNG(frame: MLXArray) throws -> (data: Data, width: Int, height: Int) {
+public func encodePNG(frame: MLXArray) throws -> (data: Data, width: Int, height: Int) {
     let (bytes, w, h) = rgbBytes(frame)
     let cfData = CFDataCreate(nil, bytes, bytes.count)!
     guard
@@ -84,7 +84,7 @@ private func pixelBuffer(
 /// `@InferenceActor` so the non-`Sendable` frame tensor never crosses an
 /// isolation boundary (Swift 6 region isolation).
 @InferenceActor
-func encodeMP4(frames: MLXArray, fps: Double) async throws -> Data {
+public func encodeMP4(frames: MLXArray, fps: Double) async throws -> Data {
     let t = frames.dim(2)
     let h = frames.dim(3)
     let w = frames.dim(4)

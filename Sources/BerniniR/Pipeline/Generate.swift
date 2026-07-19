@@ -76,6 +76,7 @@ public func denoiseT2V(
     contextNull: MLXArray,
     noise: MLXArray,
     options: T2VOptions = T2VOptions(),
+    yCond: MLXArray? = nil,
     onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
 ) rethrows -> MLXArray {
     let config = renderer.config
@@ -95,7 +96,9 @@ public func denoiseT2V(
 
     // Precompute RoPE frequencies (grid sizes are constant across all steps)
     let (c, tLat, hLat, wLat) = (noise.dim(0), noise.dim(1), noise.dim(2), noise.dim(3))
-    precondition(c == config.inDim)
+    // Noise is always vaeZDim channels; the model INPUT is inDim (t2v: ==vaeZDim; i2v: 36 after
+    // the yCond concat). Gate on the latent channel count, not the model-input channel count.
+    precondition(c == config.vaeZDim)
     let fGrid = tLat / config.patchSize[0]
     let hGrid = hLat / config.patchSize[1]
     let wGrid = wLat / config.patchSize[2]
@@ -134,11 +137,16 @@ public func denoiseT2V(
         let rcs = isHigh ? ropeCosSinHigh : ropeCosSinLow
         let ctx = isHigh ? contextCfgHigh : contextCfgLow
 
+        // I2V (in_dim=36): concat the constant conditioning y=[mask(4),image_latent(16)]
+        // onto the 16-ch noisy latent → 36-ch model input. yCond nil → plain t2v (16-ch).
+        // The scheduler still steps the 16-ch `latents`; only the model INPUT carries y.
+        let modelInput = yCond != nil ? concatenated([latents, yCond!], axis: 0) : latents
+
         let noisePred: MLXArray
         if options.noCFG {
             // CFG-free (Lightning): single forward, the prediction IS the output.
             let preds = model(
-                [latents], t: MLXArray([Float(timestepVal)]), context: .embedded(ctx),
+                [modelInput], t: MLXArray([Float(timestepVal)]), context: .embedded(ctx),
                 seqLen: seqLen, crossKVCaches: kv, ropeCosSin: rcs)
             noisePred = preds[0]
         } else {
@@ -146,7 +154,7 @@ public func denoiseT2V(
             let gs = isHigh ? options.guideScale.1 : options.guideScale.0
             let tBatch = MLXArray([Float(timestepVal), Float(timestepVal)])
             let preds = model(
-                [latents, latents], t: tBatch, context: .embedded(ctx), seqLen: seqLen,
+                [modelInput, modelInput], t: tBatch, context: .embedded(ctx), seqLen: seqLen,
                 crossKVCaches: kv, ropeCosSin: rcs)
             noisePred = preds[1] + Float(gs) * (preds[0] - preds[1])
         }

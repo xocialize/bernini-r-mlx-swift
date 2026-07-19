@@ -36,8 +36,13 @@ private func rgbCHW(_ cg: CGImage, width: Int, height: Int) -> [Float] {
     var chw = [Float](repeating: 0, count: 3 * height * width)
     let plane = height * width
     for y in 0..<height {
+        // The CGContext y-flip above draws top-down into `rgba`; reading it straight still yields a
+        // vertically-flipped tensor vs FrameEncode/writePNG's convention (verified via AnimeGen-I2V:
+        // frame-0 content correct but upside-down). Mirror the source row so the orientation matches
+        // the decode output (also corrects r2v/v2v reference orientation).
+        let srcY = height - 1 - y
         for x in 0..<width {
-            let p = (y * width + x) * 4
+            let p = (srcY * width + x) * 4
             let i = y * width + x
             chw[i] = Float(rgba[p]) / 255 * 2 - 1  // R
             chw[plane + i] = Float(rgba[p + 1]) / 255 * 2 - 1  // G
@@ -55,7 +60,7 @@ private func cgImage(from data: Data) throws -> CGImage {
 }
 
 /// Reference `Image` → pixels [1, 3, 1, H, W] in [-1, 1] (one temporal frame).
-func decodeReferencePixels(_ image: Image, width: Int, height: Int) throws -> MLXArray {
+public func decodeReferencePixels(_ image: Image, width: Int, height: Int) throws -> MLXArray {
     let chw = try rgbCHW(cgImage(from: image.data), width: width, height: height)
     return MLXArray(chw, [1, 3, 1, height, width])
 }
