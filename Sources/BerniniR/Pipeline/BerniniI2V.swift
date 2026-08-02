@@ -80,6 +80,7 @@ extension BerniniPipeline {
         let latent = try denoiseT2V(
             renderer: renderer, contextCond: contextCond, contextNull: contextNull,
             noise: noise, options: options, yCond: y, onStep: onStep)
+        parkStreaming()  // DiT phase over — release the prefetch thread before decode
 
         let frames = decodeStreaming(vae: vae, latent.expandedDimensions(axis: 0))
         eval(frames)

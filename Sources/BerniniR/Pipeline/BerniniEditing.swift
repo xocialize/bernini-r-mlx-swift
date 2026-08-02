@@ -12,6 +12,15 @@ import MLXRandom
 
 extension BerniniPipeline {
 
+    /// The editing samplers drive `forwardMultiseg`, a hand-written block loop that bypasses
+    /// `WanModel.runBlocks` and therefore a bound `BlockStreamer` (see the warning on
+    /// `forwardMultiseg`). Streamed, they would read unrefilled slots and emit garbage
+    /// silently, so refuse up front rather than returning a plausible-looking wrong clip.
+    /// t2v/t2i/i2v are unaffected — those route through `runBlocks`, the receipted path.
+    func requireResidentBlocks(_ surface: String) throws {
+        try renderer.requireResidentBlocks(surface)
+    }
+
     /// Pre-embedded cond/uncond UMT5 contexts per expert (the oracle's `_edit_setup` text half).
     private func editContexts(prompt: String, negative: String) throws
         -> (condHigh: MLXArray, condLow: MLXArray, uncondHigh: MLXArray, uncondLow: MLXArray)
@@ -65,6 +74,7 @@ extension BerniniPipeline {
         eta: Float = 0.5,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
+        try requireResidentBlocks("r2v (reference-to-video)")
         let negative = negativePrompt ?? config.sampleNegPrompt
         let ctx = try editContexts(prompt: prompt, negative: negative)
         let refLatents = encodeRefs(referencePixels)
@@ -103,6 +113,7 @@ extension BerniniPipeline {
         omegaTI: Float = 4.0,
         onStep: ((Int, Int, MLXArray) throws -> Void)? = nil
     ) throws -> MLXArray {
+        try requireResidentBlocks("videoEdit (\(mode.rawValue))")
         let negative = negativePrompt ?? config.sampleNegPrompt
         let ctx = try editContexts(prompt: prompt, negative: negative)
         let videoLatents = [vae.encode(sourceVideoPixels)[0]]

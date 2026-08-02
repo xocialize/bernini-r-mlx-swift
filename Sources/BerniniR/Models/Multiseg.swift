@@ -50,6 +50,17 @@ func timeEmbed(model: WanModel, t: MLXArray) -> (MLXArray, MLXArray) {
 /// - condSegments: ordered (latent [C,T,H,W], source_id) context (may be empty).
 /// - targetLatent: noisy target latent [C, T, H, W] (source_id 0).
 /// - context: pre-embedded UMT5 text [1, textLen, dim].
+///
+/// ⚠️ This is a HAND-WRITTEN block loop — it does NOT go through `WanModel.runBlocks`, so it
+/// does NOT route through a bound `BlockStreamer`. With a streamer attached the blocks'
+/// parameters alias the two slots, and nothing here activates the refill thread or waits on a
+/// group, so every block would read whatever the slots happen to hold (zeros straight after
+/// `bind`) — garbage output, not a crash. The editing entry points therefore refuse to run
+/// while streaming is active; see `BerniniPipeline.requireResidentBlocks`. Routing this loop
+/// through the streamer is possible but needs a public group-window API on wan-core's
+/// `BlockStreamer` (`acquireGroup`/`releaseGroup`/`ensureActive` are internal to WanCore) and
+/// its own parity receipt — the editing surfaces run 2–4 full block sweeps per step, an IO
+/// profile the HV2 receipts never measured.
 public func forwardMultiseg(
     model: WanModel,
     condSegments: [MultisegSegment],

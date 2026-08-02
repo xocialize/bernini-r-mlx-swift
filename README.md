@@ -20,7 +20,7 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > BIT-IDENTICAL, the pipeline decode path) · S6 (int4, cosine 0.9977 cross-validated) ·
 > S7 wrap (`MLXBerniniR`: `BerniniRPackage` — textToVideo + textToImage, offline-conformance
 > green; live engine-seam validation pending the manual app-target link).** Heavy/Metal gates
-> run as CLI modes: `swift run RunBernini --s4-gate | --s5-gate | --s6-gate`.
+> run as CLI modes: `swift run RunBernini --s4-gate | --s5-gate | --s6-gate | --s7-gate`.
 
 > **Speed:** `.fast` request mode = DPM++(2M) at 16 steps — **2.53× faster** than the 40-step
 > UniPC default at near-identical quality (int4, 17-frame t2v: 415.6 s vs 1049.7 s, same seed
@@ -41,6 +41,26 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > validates the preprocessing → r2v chain (subject preserved):
 >
 > ![r2v](assets/smoke_r2v_fox.png)
+
+> **Block streaming (HV2, opt-in):** the DiT's 40 blocks per expert can be read from
+> per-block granule files through two resident slots instead of being loaded resident —
+> wan-core's `BlockStreamer` (v0.1.0), proven bit-exact on real A14B by
+> `RunWanStream` (`mlxengine-todo/probes/hv2_wan_blockstreamer.out`). Opt in with
+> `BerniniRConfiguration.streamedBlocks` + `granuleRootDirectory` (or
+> `BerniniRConfiguration.int4Streamed`); lay the tree out with wan-core's
+> `wan-granule-layout` as `<root>/{bf16,int4}/{high,low}`. `t2v` / `t2i` / `i2v` route
+> through the streamer automatically and the A14B t=875 expert switch just activates the
+> other granule set — no denoise-path changes. **The editing surfaces (`r2v`/`v2v`/`rv2v`)
+> refuse while streamed:** their multiseg forward is a hand-written block loop that bypasses
+> the streamer's group window, so it would read unrefilled slots and return a
+> plausible-but-wrong clip. Gate: `swift run -c release RunBernini --s7-gate`
+> (streamed load · streamed forward ≡ resident forward memcmp · stale-granule guard ·
+> editing guard) — passing on int4 and bf16, 2026-08-01.
+>
+> ⚠️ The declared `QuantFootprint` is **unchanged**. The HV2 receipt's 7.11 GB is the DiT
+> denoise working set with umT5 and the VAE deliberately not loaded; `residentBytes` is
+> max-over-phase and the fp32 umT5 encode (~22 GB) dominates it. A whole-pipeline app-seam
+> re-measure gates both a smaller declaration and the §5.6 bandwidth field.
 
 **S2b GPU smoke (2026-06-12):** real-prompt t2i on GPU via plain `swift run RunBernini`
 (no metallib issue under the SPM CLI; weight loads must ride the CPU stream — see

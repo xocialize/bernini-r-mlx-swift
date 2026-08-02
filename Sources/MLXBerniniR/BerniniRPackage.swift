@@ -101,7 +101,16 @@ public final class BerniniRPackage: ModelPackage {
         } else {
             directory = try await WeightLoader.snapshotDownload(repoID: configuration.repo)
         }
-        pipeline = try await BerniniPipeline.fromPretrained(modelDir: directory)
+        // HV2 opt-in: with `streamedBlocks` + a granule root, the DiT's transformer blocks
+        // stream from granules through two slots instead of loading resident. Everything
+        // else about the load is unchanged, and t2v/t2i/i2v route through the streamer
+        // automatically. Granules are a derived artifact the engine does not materialize —
+        // an absent or stale tree fails the load loudly rather than silently going resident.
+        let streaming = configuration.resolvedGranuleRoot.map {
+            BerniniStreamingConfiguration(granuleRoot: $0)
+        }
+        pipeline = try await BerniniPipeline.fromPretrained(
+            modelDir: directory, streaming: streaming)
     }
 
     public func unload() async {

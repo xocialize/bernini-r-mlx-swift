@@ -53,6 +53,12 @@ let modelDir = URL(
     filePath: argValue("--model-dir")
         ?? "/Volumes/DEV_ARCHIVE/weights/bernini-r-mlx-weights/ckpt-bf16")
 let outDir = URL(filePath: argValue("--out") ?? "/tmp/bernini")
+// HV2 block streaming (--stream): read the DiT blocks from a wan-granule-layout tree instead
+// of loading them resident. `.auto` here — the production policy, so the runtime gate decides
+// and falls back to fully-resident when N is too small to hide the refills.
+let granulesRoot = URL(
+    filePath: argValue("--granules-root") ?? "/Volumes/Satechi/Models/wan-granules")
+let streamBlocks = CommandLine.arguments.contains("--stream")
 
 func writePNG(_ frame: MLXArray, to url: URL) throws {
     // frame: [3, H, W] in [-1, 1]
@@ -131,12 +137,29 @@ struct RunBernini {
                     .appending(path: "ckpt-int4"))
             return
         }
+        if CommandLine.arguments.contains("--s7-gate") {
+            try runS7Gate(
+                modelDir: modelDir,
+                granulesRoot: URL(
+                    filePath: argValue("--granules-root")
+                        ?? "/Volumes/Satechi/Models/wan-granules"))
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 
         print("Loading pipeline from \(modelDir.path) …")
         let tLoad = Date()
-        let pipeline = try await BerniniPipeline.fromPretrained(modelDir: modelDir)
+        var streaming: BerniniStreamingConfiguration? = nil
+        if streamBlocks {
+            let quantized = try WanConfig.load(
+                from: modelDir.appending(path: "config.json")).quantization != nil
+            let root = granulesRoot.appending(path: quantized ? "int4" : "bf16")
+            print("  streaming DiT blocks from \(root.path)")
+            streaming = BerniniStreamingConfiguration(granuleRoot: root)
+        }
+        let pipeline = try await BerniniPipeline.fromPretrained(
+            modelDir: modelDir, streaming: streaming)
         print(String(format: "  load: %.1fs", -tLoad.timeIntervalSinceNow))
 
         print(
@@ -189,6 +212,11 @@ struct RunBernini {
                 onStep: progress)
         }
         print(String(format: "  generate: %.1fs total", -tGen.timeIntervalSinceNow))
+        if let verdict = pipeline.streamingVerdict {
+            // `.fellBack` is a correct, output-invisible outcome — the runtime gate measured
+            // that refills could not hide at this N and loaded the blocks resident instead.
+            print("  block streaming: \(verdict.rawValue)")
+        }
 
         let t = frames.dim(2)
         for i in 0..<t {

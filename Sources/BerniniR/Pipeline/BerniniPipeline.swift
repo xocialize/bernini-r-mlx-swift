@@ -38,14 +38,17 @@ public final class BerniniPipeline: @unchecked Sendable {
     /// layout: {high_noise_model,low_noise_model,vae,t5_encoder}.safetensors
     /// + config.json). The tokenizer comes from google/umt5-xxl (HF), exactly
     /// like mlx-video.
+    /// `streaming` opts the renderer's transformer blocks onto the HV2 granule-streaming
+    /// path (see `BerniniStreamingConfiguration`); nil keeps the fully-resident load.
     public static func fromPretrained(
-        modelDir: URL, quantization: WanQuantization? = nil
+        modelDir: URL, quantization: WanQuantization? = nil,
+        streaming: BerniniStreamingConfiguration? = nil
     ) async throws -> BerniniPipeline {
         let config = try WanConfig.load(
             from: modelDir.appendingPathComponent("config.json"))
 
         let renderer = try BerniniRendererModel.fromPretrained(
-            modelDir: modelDir, quantization: quantization)
+            modelDir: modelDir, quantization: quantization, streaming: streaming)
 
         let vae = WanVAE(zDim: config.vaeZDim, encoder: true)
         let vaeWeights = try Device.withDefaultDevice(.cpu) {
@@ -66,6 +69,20 @@ public final class BerniniPipeline: @unchecked Sendable {
             config: config, renderer: renderer, vae: vae,
             modelDir: modelDir, tokenizer: tokenizer)
     }
+
+    /// Park the block streamer between phases: stop the prefetch thread and close the
+    /// granule file descriptors once the denoise loop is done, so the IO thread isn't live
+    /// alongside the VAE decode's own memory pressure. Slots and bindings survive — the next
+    /// generation's first forward reactivates at group 0. No-op when loaded resident.
+    func parkStreaming() {
+        renderer.blockStreamer?.finish()
+        renderer.releaseStreamerIfFellBack()
+    }
+
+    /// What the runtime gate decided, once the first streamed forward has run: `.streaming`,
+    /// `.fellBack` (auto-fallback loaded the blocks resident — output-invisibly), or
+    /// `.undecided`. Nil when this pipeline was loaded resident.
+    public var streamingVerdict: BlockStreamer.Verdict? { renderer.streamingVerdict }
 
     /// Load the fp32 umT5 encoder from the checkpoint (fp32 like mlx-video's
     /// `load_t5_encoder`). Loaded on demand, not held resident.
@@ -149,6 +166,7 @@ public final class BerniniPipeline: @unchecked Sendable {
             noise: noise,
             options: options,
             onStep: onStep)
+        parkStreaming()  // DiT phase over — release the prefetch thread before decode
 
         // Streaming decode: bit-identical to whole-sequence decode with flat
         // peak memory (whole-sequence OOMs past ~49 frames) — the oracle's
