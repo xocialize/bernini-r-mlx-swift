@@ -23,20 +23,27 @@ private func a14bConfig() -> WanConfig {
 }
 
 @Suite struct WanModelKeyPathTests {
+    // `WanModel(_:)` random-inits its weights, which advances MLX's global RNG
+    // stream — so even these structural tests must take the global-state lock
+    // (see withCPU in TestSupport.swift) or they race SamplingTests' seed-42 gate.
     @Test func parameterPathsMatchContract() {
-        let model = WanModel(a14bConfig())
-        let paths = Set(model.parameters().flattened().map(\.0))
-        let expected = BerniniWeightKeys.ditKeys()
-        let missing = expected.subtracting(paths)
-        let unexpected = paths.subtracting(expected)
-        #expect(missing.isEmpty, "missing: \(missing.sorted().prefix(8))")
-        #expect(unexpected.isEmpty, "unexpected: \(unexpected.sorted().prefix(8))")
+        withCPU {
+            let model = WanModel(a14bConfig())
+            let paths = Set(model.parameters().flattened().map(\.0))
+            let expected = BerniniWeightKeys.ditKeys()
+            let missing = expected.subtracting(paths)
+            let unexpected = paths.subtracting(expected)
+            #expect(missing.isEmpty, "missing: \(missing.sorted().prefix(8))")
+            #expect(unexpected.isEmpty, "unexpected: \(unexpected.sorted().prefix(8))")
+        }
     }
 
     @Test func ropeTableShapeAndHeadDimSplit() {
-        let model = WanModel(a14bConfig())
-        // head_dim 128 -> rope dims t44/h42/w42, half_d total 64
-        #expect(model.freqs.shape == [1024, 64, 2])
+        withCPU {
+            let model = WanModel(a14bConfig())
+            // head_dim 128 -> rope dims t44/h42/w42, half_d total 64
+            #expect(model.freqs.shape == [1024, 64, 2])
+        }
     }
 }
 

@@ -13,6 +13,12 @@ import Testing
 // Pure structural test: arrays are created lazily and never evaluated, so no
 // Metal kernel runs and this passes under plain `xcrun swift test` (no
 // metallib needed — that constraint only bites tests that eval on GPU).
+//
+// Laziness does NOT make it free of global state, though: `WanVAE(...)`
+// random-inits its weights, and MLX splits the global RNG key eagerly at call
+// time (only the resulting arrays are lazy). So these bodies must take the
+// global-state lock via withCPU — see TestSupport.swift — or they race
+// SamplingTests' absolute seed-42 stream assertion.
 @Suite struct VAEKeyPathTests {
 
     private func fixtureKeys() throws -> Set<String> {
@@ -27,33 +33,39 @@ import Testing
         let expected = try fixtureKeys()
         #expect(expected.count == 194)
 
-        let vae = WanVAE(zDim: 16, encoder: true)
-        let actual = Set(vae.parameters().flattened().map(\.0))
+        withCPU {
+            let vae = WanVAE(zDim: 16, encoder: true)
+            let actual = Set(vae.parameters().flattened().map(\.0))
 
-        let missing = expected.subtracting(actual)
-        let unexpected = actual.subtracting(expected)
-        #expect(
-            missing.isEmpty,
-            "\(missing.count) fixture keys absent from module, e.g. \(missing.sorted().prefix(5))")
-        #expect(
-            unexpected.isEmpty,
-            "\(unexpected.count) module keys not in fixture, e.g. \(unexpected.sorted().prefix(5))")
-        #expect(actual.count == 194)
+            let missing = expected.subtracting(actual)
+            let unexpected = actual.subtracting(expected)
+            #expect(
+                missing.isEmpty,
+                "\(missing.count) fixture keys absent from module, e.g. \(missing.sorted().prefix(5))")
+            #expect(
+                unexpected.isEmpty,
+                "\(unexpected.count) module keys not in fixture, e.g. \(unexpected.sorted().prefix(5))")
+            #expect(actual.count == 194)
+        }
     }
 
     @Test func decoderOnlyConstructionDropsEncoderSide() throws {
         let expected = try fixtureKeys().filter {
             !($0.hasPrefix("encoder.") || $0.hasPrefix("conv1."))
         }
-        let vae = WanVAE(zDim: 16, encoder: false)
-        let actual = Set(vae.parameters().flattened().map(\.0))
-        #expect(actual == Set(expected))
+        withCPU {
+            let vae = WanVAE(zDim: 16, encoder: false)
+            let actual = Set(vae.parameters().flattened().map(\.0))
+            #expect(actual == Set(expected))
+        }
     }
 
     @Test func parametersAreFP32() throws {
         // The checkpoint VAE ships fp32; the module must materialize fp32 slots.
-        let vae = WanVAE(zDim: 16, encoder: true)
-        let dtypes = Set(vae.parameters().flattened().map { $0.1.dtype })
-        #expect(dtypes == [.float32])
+        withCPU {
+            let vae = WanVAE(zDim: 16, encoder: true)
+            let dtypes = Set(vae.parameters().flattened().map { $0.1.dtype })
+            #expect(dtypes == [.float32])
+        }
     }
 }
