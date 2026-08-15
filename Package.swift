@@ -27,7 +27,11 @@ let package = Package(
         .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.27.0"),
         // The neutral Wan substrate (DiT + VAE + umT5 + RoPE + schedulers + loader),
         // extracted so Helios/Phantom/TI2V-5B share it. Local path during B0; tagged dep later.
-        .package(path: "../wan-core-mlx-swift"),
+        // The shared Wan substrate (B0 extraction). Versioned dep since 2026-08-14 —
+        // this is the "swap bernini's path dep → tagged URL" formalization the B0 plan
+        // left user-gated (WAN-CORE-EXTRACTION-PLAN.md:7). Pulls BlockStreamKit
+        // transitively, itself now a URL dep on the public kit repo.
+        .package(url: "https://github.com/xocialize/wan-core-mlx-swift", from: "0.2.0"),
     ],
     targets: [
         .target(
