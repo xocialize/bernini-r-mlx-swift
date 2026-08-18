@@ -145,6 +145,10 @@ struct RunBernini {
                         ?? "/Volumes/Satechi/Models/wan-granules"))
             return
         }
+        if CommandLine.arguments.contains("--v1-gate") {
+            try runV1Gate(modelDir: modelDir)
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 
