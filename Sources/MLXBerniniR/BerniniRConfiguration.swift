@@ -96,6 +96,24 @@ public struct BerniniRConfiguration: PackageConfiguration, ModelStorable, QuantC
         BerniniRConfiguration(repo: "mlx-community/Bernini-R-1.3B-int4", quant: .int4)
     }
 
+    /// Bernini-v2 (E7): the FULL unified Bernini — retrained A14B experts + the
+    /// MLLM planner plane (Qwen2.5-VL 7.7B + DiffLoss_FM + connector) in one
+    /// checkpoint. With a v2 checkpoint resident, the package's t2v/t2i surfaces
+    /// run PLANNER-CONDITIONED generation (25-step MaskGIT plan → vae_txt_vit_wapg
+    /// render) — the paper-grade path; v1 checkpoints keep the classic samplers.
+    /// The planner phase pages in per request and is evicted before the render
+    /// (measured phase peak ≤19.2 GB bf16, strictly under the render envelope),
+    /// so the declared footprints are unchanged from the same-quant renderer
+    /// figures pending the production-config app-seam re-measure.
+    public static var v2: BerniniRConfiguration {
+        BerniniRConfiguration(repo: "mlx-community/Bernini-v2-bf16")
+    }
+
+    /// v2 with int4 experts (planner/T5/VAE stay bf16 in the published variant).
+    public static var v2Int4: BerniniRConfiguration {
+        BerniniRConfiguration(repo: "mlx-community/Bernini-v2-int4", quant: .int4)
+    }
+
     /// int4 with HV2 block streaming — the A14B DiT's 40 blocks per expert are read from
     /// granules through two ~377 MiB slots instead of ~17 GB of resident expert weights.
     /// Point `granuleRootDirectory` at a `wan-granule-layout` tree (`<root>/int4/{high,low}`).

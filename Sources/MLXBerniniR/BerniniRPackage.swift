@@ -28,6 +28,8 @@ public final class BerniniRPackage: ModelPackage {
             // Bernini-R / Wan2.2 weights are Apache-2.0; this port code is Apache-2.0.
             license: LicenseDeclaration(weightLicense: .apache2, portCodeLicense: .apache2),
             provenance: Provenance(
+                // Static manifest → the renderer-family default. v2 configurations resolve
+                // weights from mlx-community/Bernini-v2-{bf16,int4} (same licence/tier).
                 sourceRepo: "mlx-community/Bernini-R-bf16",
                 revision: "main",
                 tier: 1
@@ -44,6 +46,12 @@ public final class BerniniRPackage: ModelPackage {
                 //     forward (+ a contamination-free baseline) drops the peak ~30 GB. -> declare 67 GB.
                 //     This lands int4 editing UNDER the 0.7x production budget (96.2 GB) — un-blocks §3.1
                 //     (the package was un-admittable at 98 GB).
+                //   Bernini-v2 (E7): same declarations hold. The planner phase is paged in per
+                //     request and EVICTED before render — measured plan-phase peak 19.2 GB bf16,
+                //     render-phase envelope 59.6 GB, 64.8 GB overall at the 480x320x17f/16-step
+                //     smoke (2026-08-18, RunBernini --v3-e2e --prompt). Production-config
+                //     (832x480x49f/40-step) app-seam re-measure PENDING per doctrine; revisit
+                //     these declarations then.
                 footprints: [
                     QuantFootprint(quant: .bf16, residentBytes: 112_000_000_000),
                     QuantFootprint(quant: .int4, residentBytes: 67_000_000_000),
@@ -60,14 +68,18 @@ public final class BerniniRPackage: ModelPackage {
                     name: "bernini-r-t2v",
                     summary: "Wan2.2-A14B dual-expert text-to-video (Bernini-R renderer, MLX). "
                         + "High-quality short clips; 832x480 native, frames must be 4n+1. "
-                        + "`.fast` mode (DPM++/16) is ~2.5× quicker at near-identical quality.",
+                        + "`.fast` mode (DPM++/16) is ~2.5× quicker at near-identical quality. "
+                        + "With a Bernini-v2 checkpoint (.v2/.v2Int4) the same surface runs the "
+                        + "full unified model: MLLM-planned, planner-conditioned generation.",
                     modes: [.fast, .quality]
                 ),
                 T2IContract.descriptor(
                     name: "bernini-r-t2i",
                     summary: "Text-to-image via single-frame Wan2.2-A14B video diffusion "
                         + "(Bernini-R renderer, MLX). Photorealistic stills, 832x480 native. "
-                        + "`.fast` mode (DPM++/16) is ~2.5× quicker at near-identical quality.",
+                        + "`.fast` mode (DPM++/16) is ~2.5× quicker at near-identical quality. "
+                        + "With a Bernini-v2 checkpoint (.v2/.v2Int4) the same surface runs the "
+                        + "full unified model: MLLM-planned, planner-conditioned generation.",
                     modes: [.fast, .quality]
                 ),
                 VEditContract.descriptor(
@@ -128,7 +140,7 @@ public final class BerniniRPackage: ModelPackage {
                 throw PackageError.configurationMismatch(
                     expected: "T2IRequest", got: String(describing: type(of: request)))
             }
-            return try runT2I(t2i, pipeline: pipeline)
+            return try await runT2I(t2i, pipeline: pipeline)
         case .textToVideo:
             guard let t2v = request as? T2VRequest else {
                 throw PackageError.configurationMismatch(
@@ -166,8 +178,29 @@ public final class BerniniRPackage: ModelPackage {
         return resolveSampling(mode: .fast, steps: nil)
     }
 
-    private func runT2I(_ request: T2IRequest, pipeline: BerniniPipeline) throws -> T2IResponse {
+    private func runT2I(_ request: T2IRequest, pipeline: BerniniPipeline) async throws -> T2IResponse {
         try Task.checkCancellation()
+        // Bernini-v2 checkpoint resident → planner-conditioned generation (E7):
+        // MaskGIT plan (planner paged in per request, evicted) → wvitcfg render.
+        // CAN: checkpoints per planning step AND per render step.
+        if hasPlannerPlane(modelDir: pipeline.modelDir), !configuration.lightning {
+            let steps = request.steps ?? (request.mode == .fast ? 16 : 40)
+            let frames = try await plannedGenerate(
+                renderer: pipeline.renderer, vae: pipeline.vae,
+                modelDir: pipeline.modelDir, config: pipeline.config,
+                umt5Tokenizer: pipeline.tokenizer,
+                prompt: request.prompt,
+                negativePrompt: request.negativePrompt,
+                width: request.width ?? 832, height: request.height ?? 480,
+                numFrames: 1, renderSteps: steps,
+                seed: request.seed ?? 42,
+                onPlanStep: { _, _ in try Task.checkCancellation() },
+                onRenderStep: { _, _ in try Task.checkCancellation() })
+            try Task.checkCancellation()
+            let (data, width, height) = try encodePNG(frame: frames[0, 0..., 0, 0..., 0...])
+            return T2IResponse(
+                image: Image(format: .png, data: data, width: width, height: height))
+        }
         // Lightning config → the fixed 4-step CFG-free sampler (overrides mode/steps).
         // Otherwise `.fast` mode → DPM++/16, else the 40-step UniPC default.
         let lit = configuration.lightning
@@ -223,6 +256,25 @@ public final class BerniniRPackage: ModelPackage {
                 steps: request.steps ?? 40, seed: request.seed ?? 42
             ) { _, _, _ in try Task.checkCancellation() }
             // Post-core checkpoint: streaming VAE decode bails per chunk (non-throwing).
+            try Task.checkCancellation()
+            return try await framesToVideoResponse(frames, fps: fps)
+        }
+
+        // Bernini-v2 checkpoint resident → planner-conditioned t2v (E7). Reference
+        // images keep the classic r2v path above; lightning keeps its own sampler.
+        if hasPlannerPlane(modelDir: pipeline.modelDir), !configuration.lightning {
+            let steps = request.steps ?? (request.mode == .fast ? 16 : 40)
+            let frames = try await plannedGenerate(
+                renderer: pipeline.renderer, vae: pipeline.vae,
+                modelDir: pipeline.modelDir, config: pipeline.config,
+                umt5Tokenizer: pipeline.tokenizer,
+                prompt: request.prompt,
+                negativePrompt: request.negativePrompt,
+                width: width, height: height,
+                numFrames: numFrames, renderSteps: steps,
+                seed: request.seed ?? 42,
+                onPlanStep: { _, _ in try Task.checkCancellation() },
+                onRenderStep: { _, _ in try Task.checkCancellation() })
             try Task.checkCancellation()
             return try await framesToVideoResponse(frames, fps: fps)
         }

@@ -21,6 +21,7 @@
 import Foundation
 import MLX
 import MLXNN
+import WanCore
 
 /// Upstream `MLPConnector` (both branches enabled in v2).
 public final class MLPConnector: Module {
@@ -60,27 +61,33 @@ public struct PlannerGlue {
     public let maskTokens: MLXArray
 
     public static func fromPretrained(file: URL, dtype: DType? = nil) throws -> PlannerGlue {
-        let raw = try MLX.loadArrays(url: file)
-        guard let maskTokens = raw["mask_tokens"] else {
-            throw NSError(
-                domain: "BerniniPlanner", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "planner_glue missing mask_tokens"])
+        // CPU-pin (watchdog doctrine — see QwenPlannerBackbone.fromPretrained).
+        let (params, maskTokens) = try Device.withDefaultDevice(.cpu) {
+            () -> ([String: MLXArray], MLXArray) in
+            let raw = try MLX.loadArrays(url: file)
+            guard let maskTokens = raw["mask_tokens"] else {
+                throw NSError(
+                    domain: "BerniniPlanner", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "planner_glue missing mask_tokens"])
+            }
+            var params: [String: MLXArray] = [:]
+            for (key, value) in raw where key.hasPrefix("connector.") {
+                var k = String(key.dropFirst("connector.".count))
+                for idx in ["0", "2", "3", "4"] {
+                    k = k.replacingOccurrences(of: "proj_gen.\(idx)", with: "proj_gen_\(idx)")
+                    k = k.replacingOccurrences(of: "pred_vit.\(idx)", with: "pred_vit_\(idx)")
+                }
+                params[k] = dtype.map { value.asType($0) } ?? value
+            }
+            let cast = dtype.map { maskTokens.asType($0) } ?? maskTokens
+            WeightLoader.materialize(params)
+            eval(cast)
+            return (params, cast)
         }
         let connector = MLPConnector()
-        var params: [String: MLXArray] = [:]
-        for (key, value) in raw where key.hasPrefix("connector.") {
-            var k = String(key.dropFirst("connector.".count))
-            for idx in ["0", "2", "3", "4"] {
-                k = k.replacingOccurrences(of: "proj_gen.\(idx)", with: "proj_gen_\(idx)")
-                k = k.replacingOccurrences(of: "pred_vit.\(idx)", with: "pred_vit_\(idx)")
-            }
-            params[k] = dtype.map { value.asType($0) } ?? value
-        }
         try connector.update(
             parameters: ModuleParameters.unflattened(params), verify: [.noUnusedKeys])
-        return PlannerGlue(
-            connector: connector,
-            maskTokens: dtype.map { maskTokens.asType($0) } ?? maskTokens)
+        return PlannerGlue(connector: connector, maskTokens: maskTokens)
     }
 }
 

@@ -146,8 +146,9 @@ public final class BerniniPlanner {
         revealOrder: [Int]? = nil, fmNoises: [MLXArray]? = nil,
         seed: UInt64 = 42,
         tapLayers: Int? = nil, fmSigmas: MLXArray? = nil,
-        fmTimesteps: MLXArray? = nil
-    ) -> PlannerContexts {
+        fmTimesteps: MLXArray? = nil,
+        onStep: ((Int, Int) throws -> Void)? = nil
+    ) rethrows -> PlannerContexts {
         let n = cond.visualOutputIndices.count
         let order = revealOrder ?? Self.seededOrder(n: n, seed: seed)
         let reveals = Self.revealSchedule(order: order, planningSteps: planningSteps)
@@ -162,6 +163,8 @@ public final class BerniniPlanner {
 
         var noiseCursor = 0
         for step in 0 ..< planningSteps {
+            // CAN seam: one checkpoint per planning step (3 backbone forwards each).
+            try onStep?(step, planningSteps)
             let toPred = reveals[step]
             if toPred.isEmpty { continue }
 

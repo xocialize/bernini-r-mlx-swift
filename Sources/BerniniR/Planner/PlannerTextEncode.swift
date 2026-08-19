@@ -23,11 +23,18 @@ public enum PlannerTextEncode {
         prompt: String, negativePrompt: String
     ) throws -> (MLXArray, MLXArray) {
         var encoder: UMT5EncoderModel? = UMT5EncoderModel.fromConfig(config)
-        let t5Weights = try WeightLoader.loadVerifiedSafetensors(
-            url: modelDir.appendingPathComponent("t5_encoder.safetensors"),
-            expectedKeys: BerniniWeightKeys.t5Keys(layers: config.t5NumLayers)
-        ).mapValues { $0.asType(.float32) }
-        WeightLoader.materialize(t5Weights)
+        // CPU-pin the 11 GB load+cast (watchdog doctrine — see
+        // QwenPlannerBackbone.fromPretrained): in the package path this runs
+        // after the plan phase has churned the page cache, so cold mmap reads
+        // are the normal case and must not ride a Metal command buffer.
+        let t5Weights = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
+            let cast = try WeightLoader.loadVerifiedSafetensors(
+                url: modelDir.appendingPathComponent("t5_encoder.safetensors"),
+                expectedKeys: BerniniWeightKeys.t5Keys(layers: config.t5NumLayers)
+            ).mapValues { $0.asType(.float32) }
+            WeightLoader.materialize(cast)
+            return cast
+        }
         try encoder!.update(
             parameters: ModuleParameters.unflattened(t5Weights),
             verify: [.noUnusedKeys])

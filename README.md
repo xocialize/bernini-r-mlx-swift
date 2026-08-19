@@ -42,6 +42,22 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 >
 > ![r2v](assets/smoke_r2v_fox.png)
 
+> **Bernini-v2 — the planner plane (E7, 2026-08-18):** the FULL unified Bernini
+> ([`ByteDance/Bernini-Diffusers-v2`](https://huggingface.co/ByteDance/Bernini-Diffusers-v2)) —
+> retrained A14B experts + the previously-stubbed MLLM semantic planner (Qwen2.5-VL-7.7B
+> MaskGIT planning · `DiffLoss_FM` per-token flow-match head · connector), ported end-to-end:
+> processor/template (VProc EXACT), planner (V1 ALL PASS, small + production grids), wvitcfg
+> `vae_txt_vit_wapg` renderer (V2 ALL PASS), prompt-driven e2e (V3, on-prompt render). Weights:
+> `mlx-community/Bernini-v2-{bf16,int4}` → `BerniniRConfiguration.v2` / `.v2Int4`. **With a v2
+> checkpoint the existing `t2v`/`t2i` surfaces route to planner-conditioned generation**
+> (`plannedGenerate`: 25-step MaskGIT plan, planner paged in per request and EVICTED → unpadded
+> umT5 → 4-context wvitcfg render on the resident dual experts → streaming decode) — the
+> paper-grade path; v1 checkpoints keep the classic samplers, reference/init images keep their
+> classic routes, and planned generation REFUSES while block-streamed (hand-driven forwards).
+> Engine-seam smoke `RunBernini --v4-package`: t2i 190.9 s · t2v 17f 282.6 s · peak 82.3 GB
+> (480×320/16 steps, bf16). Spec: [`PORTING-SPEC-V2.md`](PORTING-SPEC-V2.md); gates:
+> `--vproc-gate | --v1-gate | --v2-gate | --v3-e2e | --v4-package`.
+
 > **Block streaming (HV2, opt-in):** the DiT's 40 blocks per expert can be read from
 > per-block granule files through two resident slots instead of being loaded resident —
 > wan-core's `BlockStreamer` (v0.1.0), proven bit-exact on real A14B by

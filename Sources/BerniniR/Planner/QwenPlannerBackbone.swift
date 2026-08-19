@@ -21,6 +21,7 @@ import Foundation
 import MLX
 import MLXFast
 import MLXNN
+import WanCore
 
 /// Text-config subset of `mllm/config.json` (HF Qwen2_5_VLConfig).
 public struct QwenPlannerConfig: Decodable, Sendable {
@@ -238,14 +239,22 @@ public final class QwenPlannerBackbone: Module {
     {
         let config = try QwenPlannerConfig.load(mllmDir: mllmDir)
         let model = QwenPlannerBackbone(config: config)
-        let raw = try MLX.loadArrays(url: mllmDir.appending(path: "model.safetensors"))
-        var params: [String: MLXArray] = [:]
-        for (key, value) in raw {
-            guard key.hasPrefix("model.") else { continue }  // skips visual.*, lm_head
-            let stripped = String(key.dropFirst("model.".count))
-            // HF stores rotary_emb.inv_freq in some exports; never a trained weight.
-            if stripped.contains("rotary_emb") { continue }
-            params[stripped] = dtype.map { value.asType($0) } ?? value
+        // CPU-pin the 15.4 GB load: lazy mmap reads + casts must never ride a Metal
+        // command buffer — cold reads from a slow volume overrun the ~10 s GPU
+        // watchdog. The package path loads the planner AFTER the 53 GB resident
+        // renderer (which evicts any prewarmed pages), so cold is the NORMAL case.
+        let params = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
+            let raw = try MLX.loadArrays(url: mllmDir.appending(path: "model.safetensors"))
+            var params: [String: MLXArray] = [:]
+            for (key, value) in raw {
+                guard key.hasPrefix("model.") else { continue }  // skips visual.*, lm_head
+                let stripped = String(key.dropFirst("model.".count))
+                // HF stores rotary_emb.inv_freq in some exports; never a trained weight.
+                if stripped.contains("rotary_emb") { continue }
+                params[stripped] = dtype.map { value.asType($0) } ?? value
+            }
+            WeightLoader.materialize(params)
+            return params
         }
         try model.update(
             parameters: ModuleParameters.unflattened(params), verify: [.noUnusedKeys])

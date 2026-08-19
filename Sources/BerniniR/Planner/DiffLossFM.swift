@@ -19,6 +19,7 @@
 import Foundation
 import MLX
 import MLXNN
+import WanCore
 
 /// `x * (1 + scale) + shift` — the DiT-style modulation.
 private func modulate(_ x: MLXArray, _ shift: MLXArray, _ scale: MLXArray) -> MLXArray {
@@ -242,6 +243,8 @@ public final class DiffLossFM: Module {
     /// indices sanitize to the named submodules above.
     public static func fromPretrained(file: URL, dtype: DType? = nil) throws -> DiffLossFM {
         let model = DiffLossFM()
+        // CPU-pin (watchdog doctrine — see QwenPlannerBackbone.fromPretrained).
+        let params = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
         let raw = try MLX.loadArrays(url: file)
         var params: [String: MLXArray] = [:]
         for (key, value) in raw {
@@ -252,6 +255,9 @@ public final class DiffLossFM: Module {
             k = k.replacingOccurrences(of: ".mlp.2", with: ".mlp_2")
             k = k.replacingOccurrences(of: "adaLN_modulation.1", with: "adaLN")
             params[k] = dtype.map { value.asType($0) } ?? value
+        }
+        WeightLoader.materialize(params)
+        return params
         }
         try model.update(
             parameters: ModuleParameters.unflattened(params), verify: [.noUnusedKeys])

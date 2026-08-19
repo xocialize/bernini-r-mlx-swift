@@ -59,7 +59,9 @@ let package = Package(
             name: "RunBernini",
             dependencies: [
                 "BerniniR",
+                "MLXBerniniR",  // --v4-package: the engine-seam smoke drives BerniniRPackage.run()
                 .product(name: "WanCore", package: "wan-core-mlx-swift"),
+                .product(name: "MLXToolKit", package: "mlx-engine-swift"),
             ],
             path: "Sources/RunBernini"
         ),

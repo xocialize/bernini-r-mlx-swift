@@ -161,6 +161,10 @@ struct RunBernini {
             try await runV3E2E(modelDir: modelDir)
             return
         }
+        if CommandLine.arguments.contains("--v4-package") {
+            try await runV4PackageSmoke(modelDir: modelDir)
+            return
+        }
         try FileManager.default.createDirectory(
             at: outDir, withIntermediateDirectories: true)
 

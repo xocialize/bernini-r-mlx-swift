@@ -1,3 +1,4 @@
+import BerniniR
 import Foundation
 import MLXToolKit
 import Testing
@@ -97,6 +98,47 @@ import Testing
         #expect(decoded.lightning)  // the flag survives Codable
         // The standard config is not Lightning.
         #expect(!BerniniRConfiguration.int4.lightning)
+    }
+
+    @Test func v2ConfigurationsRoundTrip() throws {
+        // E7: the Bernini-v2 checkpoint family rides in as CONFIGURATIONS of this
+        // package — same surfaces, planner-conditioned dispatch keyed off the
+        // resolved checkpoint's planner plane, not new modes (C12).
+        let v2 = BerniniRConfiguration.v2
+        #expect(v2.repo == "mlx-community/Bernini-v2-bf16")
+        #expect(v2.quant == .bf16)
+        #expect(!v2.lightning)
+
+        let v2Int4 = BerniniRConfiguration.v2Int4
+        #expect(v2Int4.repo == "mlx-community/Bernini-v2-int4")
+        #expect(v2Int4.quant == .int4)
+
+        for config in [v2, v2Int4] {
+            let decoded = try JSONDecoder().decode(
+                BerniniRConfiguration.self, from: JSONEncoder().encode(config))
+            #expect(decoded.repo == config.repo)
+            #expect(decoded.quant == config.quant)
+        }
+    }
+
+    @Test func plannerPlaneProbeKeysOnV2Files() throws {
+        // `hasPlannerPlane` is the planned-dispatch key: it must require BOTH the
+        // MLLM shard and the DiffLoss head — a classic renderer checkpoint (or a
+        // partial copy) must stay on the classic samplers.
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "bernini-v2-probe-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "mllm"), withIntermediateDirectories: true)
+        #expect(!hasPlannerPlane(modelDir: root))
+
+        FileManager.default.createFile(
+            atPath: root.appending(path: "mllm/model.safetensors").path, contents: Data())
+        #expect(!hasPlannerPlane(modelDir: root))  // MLLM alone is not the plane
+
+        FileManager.default.createFile(
+            atPath: root.appending(path: "vit_decoder.safetensors").path, contents: Data())
+        #expect(hasPlannerPlane(modelDir: root))
     }
 
     @Test func registrationConstructs() throws {

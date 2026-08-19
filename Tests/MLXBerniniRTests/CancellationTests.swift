@@ -36,8 +36,14 @@ final class CancellationTests: XCTestCase {
         let report = CancellationConformance.checkCadence(
             manifest: BerniniRPackage.manifest,
             posture: .cadence([
+                // Per MaskGIT planning step (Bernini-v2 checkpoints, E7): plannedGenerate
+                // threads `onPlanStep` → `try Task.checkCancellation()` once per planner
+                // step (25 default, each ≈3 MLLM forwards — the coarsest checkpoint in
+                // the package, ~seconds apart).
+                .init(phase: "plan", unit: .step),
                 // Per denoising step: the throwing onStep closure threaded into every
-                // pipeline sampler call (t2v/t2i/r2v/v2v/rv2v — BerniniRPackage.swift).
+                // pipeline sampler call (t2v/t2i/r2v/v2v/rv2v — BerniniRPackage.swift)
+                // and `onRenderStep` on the planned wvitcfg path.
                 .init(phase: .denoise, unit: .step),
                 // Per VAE-decode temporal chunk: wan-core decodeStreaming bails on
                 // Task.isCancelled; the wrapper's post-core checkpoint rethrows.
