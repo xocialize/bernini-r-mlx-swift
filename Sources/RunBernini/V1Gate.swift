@@ -25,7 +25,7 @@ private func maxAbsDiff(_ a: MLXArray, _ b: MLXArray) -> Float {
 /// WanCore's loadNumpy is '<f4'-only; the planner fixtures also carry int64
 /// (`position_ids`, `reveal_order`) and bool (`visual_output_token_mask`).
 /// Minimal local reader for those two descrs → host Ints.
-private func loadNumpyInts(url: URL) throws -> [Int] {
+func loadNumpyInts(url: URL) throws -> [Int] {
     let data = try Data(contentsOf: url)
     guard data.count > 10, data.prefix(6) == Data([0x93] + Array("NUMPY".utf8)) else {
         throw NSError(domain: "V1Gate", code: 1,

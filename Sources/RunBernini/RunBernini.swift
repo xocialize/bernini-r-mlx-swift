@@ -149,8 +149,16 @@ struct RunBernini {
             try runV1Gate(modelDir: modelDir)
             return
         }
+        if CommandLine.arguments.contains("--vproc-gate") {
+            try await runVProcGate()
+            return
+        }
         if CommandLine.arguments.contains("--v2-gate") {
             try runV2Gate(modelDir: modelDir)
+            return
+        }
+        if CommandLine.arguments.contains("--v3-e2e") {
+            try runV3E2E(modelDir: modelDir)
             return
         }
         try FileManager.default.createDirectory(
