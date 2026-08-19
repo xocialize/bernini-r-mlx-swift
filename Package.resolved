@@ -141,8 +141,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/xocialize/wan-core-mlx-swift",
       "state" : {
-        "revision" : "1fd068acdab635062691555bec32536ed69e7609",
-        "version" : "0.2.0"
+        "revision" : "df4a537a235cdcd750b97053fa9cd2ed406a377d",
+        "version" : "0.2.1"
       }
     },
     {
