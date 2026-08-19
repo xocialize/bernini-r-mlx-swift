@@ -158,7 +158,7 @@ struct RunBernini {
             return
         }
         if CommandLine.arguments.contains("--v3-e2e") {
-            try runV3E2E(modelDir: modelDir)
+            try await runV3E2E(modelDir: modelDir)
             return
         }
         try FileManager.default.createDirectory(

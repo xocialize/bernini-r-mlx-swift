@@ -14,11 +14,12 @@ import Foundation
 import MLX
 import MLXRandom
 import MLXNN
+import Tokenizers
 import WanCore
 
 import BerniniR
 
-func runV3E2E(modelDir: URL) throws {
+func runV3E2E(modelDir: URL) async throws {
     let fixturesPath = argValue("--fixtures")
         ?? "/Volumes/DEV_ARCHIVE/bernini-v2/measure/goldens-t2v-prod"
     let dir = URL(filePath: fixturesPath)
@@ -52,15 +53,43 @@ func runV3E2E(modelDir: URL) throws {
             visualOutputIndices: voutIdx)
     }
 
+    let promptArg = argValue("--prompt")
+
     let t0 = Date()
     print("[v3-e2e] PLANNER phase (bf16, GPU, \(planningSteps) MaskGIT steps)…")
     MLXRandom.seed(e2eSeed)
     var contexts: PlannerContexts!
     do {
         let planner = try BerniniPlanner.fromPretrained(modelDir: modelDir, dtype: .bfloat16)
-        var cond = try loadStream("cond")
-        var uncond = try loadStream("uncond")
-        var imgcond = try loadStream("imgcond")
+        var cond: PlannerStream
+        var uncond: PlannerStream
+        var imgcond: PlannerStream
+        if let promptArg {
+            // PROMPT-DRIVEN: Swift processor -> embed -> mask-token overwrite.
+            print("  processor: \"\(promptArg)\" (\(renderW)x\(renderH)x\(renderFrames)f)")
+            let proc = try await BerniniProcessor.fromPretrained(
+                mllmDir: modelDir.appending(path: "mllm"))
+            let inputs = proc.process(
+                prompt: promptArg, task: renderFrames > 1 ? .t2v : .t2i,
+                width: renderW, height: renderH, numFrames: renderFrames)
+            func toStream(_ s: BerniniProcessedStream) -> PlannerStream {
+                let ids = MLXArray(s.inputIds.map(Int32.init))[.newAxis]
+                let embeds = planner.backbone.embed(ids).asType(.bfloat16)
+                let masked = planner.applyMaskTokens(
+                    embeds, outputIndices: s.visualOutputIndices)
+                return PlannerStream(
+                    inputsEmbeds: masked, mask: s.attentionMask4D(),
+                    positionIds: s.positionIdsArray(),
+                    visualOutputIndices: s.visualOutputIndices)
+            }
+            cond = toStream(inputs.cond)
+            uncond = toStream(inputs.uncond)
+            imgcond = toStream(inputs.imgcond)
+        } else {
+            cond = try loadStream("cond")
+            uncond = try loadStream("uncond")
+            imgcond = try loadStream("imgcond")
+        }
         contexts = planner.plan(
             cond: &cond, uncond: &uncond, imgcond: &imgcond,
             planningSteps: planningSteps, vitDenoisingSteps: 3,
@@ -72,10 +101,23 @@ func runV3E2E(modelDir: URL) throws {
     print(String(format: "  planning done in %.1fs, peak %.1f GB",
                  tPlan, Double(GPU.peakMemory) / 1e9))
 
-    // T5-concat exactly as pipeline.__call__ (T5 embeds from fixtures until the
-    // prompt-driven unpadded encode lands with the processor).
-    let t5 = try fx("08_t5_embeds").asType(.float32)
-    let negT5 = try fx("08_neg_t5_embeds").asType(.float32)
+    // T5-concat exactly as pipeline.__call__ — prompt-driven via the unpadded
+    // umT5 encode, else the fixture embeds.
+    let t5: MLXArray
+    let negT5: MLXArray
+    if let promptArg {
+        print("[v3-e2e] umT5 encode (unpadded, evicted after)…")
+        let wanConfig = try WanConfig.load(
+            from: modelDir.appendingPathComponent("config.json"))
+        let umt5Tok = try await AutoTokenizer.from(pretrained: "google/umt5-xxl")
+        (t5, negT5) = try PlannerTextEncode.encodeUnpadded(
+            modelDir: modelDir, config: wanConfig, tokenizer: umt5Tok,
+            prompt: promptArg,
+            negativePrompt: wanConfig.sampleNegPrompt)
+    } else {
+        t5 = try fx("08_t5_embeds").asType(.float32)
+        negT5 = try fx("08_neg_t5_embeds").asType(.float32)
+    }
     func cat(_ a: MLXArray, _ b: MLXArray) -> MLXArray {
         concatenated([a, b.asType(.float32)], axis: 1)[0]
     }
