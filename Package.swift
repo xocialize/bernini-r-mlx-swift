@@ -31,7 +31,7 @@ let package = Package(
         // this is the "swap bernini's path dep → tagged URL" formalization the B0 plan
         // left user-gated (WAN-CORE-EXTRACTION-PLAN.md:7). Pulls BlockStreamKit
         // transitively, itself now a URL dep on the public kit repo.
-        .package(url: "https://github.com/xocialize/wan-core-mlx-swift", from: "0.3.0"),
+        .package(url: "https://github.com/xocialize/wan-core-mlx-swift", from: "0.6.0"),
     ],
     targets: [
         .target(
