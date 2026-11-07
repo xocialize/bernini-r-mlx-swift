@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "MLXBerniniR", targets: ["MLXBerniniR"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.30.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift.git", "0.32.3"..<"0.33.0"),  // NAX split-K fix (AB-R-0778)
         // Tokenizers (umT5 sentencepiece) only; weight download is our own loader.
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         // MLXEngine contract (MLXToolKit) for the wrapper target; ≥0.27.0 for the CAN
@@ -31,7 +31,7 @@ let package = Package(
         // this is the "swap bernini's path dep → tagged URL" formalization the B0 plan
         // left user-gated (WAN-CORE-EXTRACTION-PLAN.md:7). Pulls BlockStreamKit
         // transitively, itself now a URL dep on the public kit repo.
-        .package(url: "https://github.com/xocialize/wan-core-mlx-swift", from: "0.2.0"),
+        .package(url: "https://github.com/xocialize/wan-core-mlx-swift", from: "0.3.0"),
     ],
     targets: [
         .target(
