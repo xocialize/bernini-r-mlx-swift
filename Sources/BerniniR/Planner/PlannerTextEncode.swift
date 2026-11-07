@@ -22,22 +22,29 @@ public enum PlannerTextEncode {
         modelDir: URL, config: WanConfig, tokenizer: any Tokenizer,
         prompt: String, negativePrompt: String
     ) throws -> (MLXArray, MLXArray) {
-        var encoder: UMT5EncoderModel? = UMT5EncoderModel.fromConfig(config)
-        // CPU-pin the 11 GB load+cast (watchdog doctrine — see
+        // The weight dict lives ONLY inside this closure — the module is the sole
+        // strong ref by the time `encoder = nil` runs, so `clearCache()` below can
+        // actually return the ~11 GB fp32 working set (the §2.4 discipline
+        // `BerniniPipeline.withTextEncoder` keeps by scoping the load the same way).
+        // CPU-pin the load+cast (watchdog doctrine — see
         // QwenPlannerBackbone.fromPretrained): in the package path this runs
         // after the plan phase has churned the page cache, so cold mmap reads
         // are the normal case and must not ride a Metal command buffer.
-        let t5Weights = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
-            let cast = try WeightLoader.loadVerifiedSafetensors(
-                url: modelDir.appendingPathComponent("t5_encoder.safetensors"),
-                expectedKeys: BerniniWeightKeys.t5Keys(layers: config.t5NumLayers)
-            ).mapValues { $0.asType(.float32) }
-            WeightLoader.materialize(cast)
-            return cast
-        }
-        try encoder!.update(
-            parameters: ModuleParameters.unflattened(t5Weights),
-            verify: [.noUnusedKeys])
+        var encoder: UMT5EncoderModel? = try {
+            let model = UMT5EncoderModel.fromConfig(config)
+            let t5Weights = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
+                let cast = try WeightLoader.loadVerifiedSafetensors(
+                    url: modelDir.appendingPathComponent("t5_encoder.safetensors"),
+                    expectedKeys: BerniniWeightKeys.t5Keys(layers: config.t5NumLayers)
+                ).mapValues { $0.asType(.float32) }
+                WeightLoader.materialize(cast)
+                return cast
+            }
+            try model.update(
+                parameters: ModuleParameters.unflattened(t5Weights),
+                verify: [.noUnusedKeys])
+            return model
+        }()
 
         let p = encodeText(
             encoder: encoder!, tokenizer: tokenizer, prompt: prompt,

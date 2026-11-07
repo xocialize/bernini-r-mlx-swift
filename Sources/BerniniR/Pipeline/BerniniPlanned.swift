@@ -41,13 +41,24 @@ public enum BerniniPlannedError: Error, CustomStringConvertible {
     }
 }
 
-/// Does this checkpoint carry the Bernini-v2 planner plane?
+/// Does this checkpoint carry the Bernini-v2 planner plane? Probes EVERY file
+/// `BerniniPlanner.fromPretrained` reads — the MLLM shard, the connector/mask
+/// tokens, and the DiffLoss head — so a partial copy stays on the classic
+/// samplers instead of committing to the planned path and dying mid-request.
 public func hasPlannerPlane(modelDir: URL) -> Bool {
-    FileManager.default.fileExists(
-        atPath: modelDir.appending(path: "mllm/model.safetensors").path)
-        && FileManager.default.fileExists(
-            atPath: modelDir.appending(path: "vit_decoder.safetensors").path)
+    let fm = FileManager.default
+    return plannerPlaneFiles.allSatisfy {
+        fm.fileExists(atPath: modelDir.appending(path: $0).path)
+    }
 }
+
+/// The checkpoint-relative files the planner plane is made of (kept beside
+/// `BerniniPlanner.fromPretrained`, which loads exactly these).
+public let plannerPlaneFiles = [
+    "mllm/model.safetensors",     // QwenPlannerBackbone
+    "planner_glue.safetensors",   // MLPConnector + mask_tokens
+    "vit_decoder.safetensors",    // DiffLossFM
+]
 
 /// Planner-conditioned t2v/t2i. Returns decoded frames `[1, 3, T, H, W]` in
 /// [-1, 1]. `renderer`/`vae` are the caller's RESIDENT models (the package's
@@ -87,13 +98,21 @@ public func plannedGenerate(
     let task: BerniniPlannerTask = numFrames > 1 ? .t2v : .t2i
     var contexts: PlannerContexts!
     do {
+        // CAN seam: the 15.4 GB planner load is the longest uninterruptible
+        // stretch in the request — check before paying for it, not after.
+        try Task.checkCancellation()
         let planner = try BerniniPlanner.fromPretrained(
             modelDir: modelDir, dtype: .bfloat16)
         let processor = try await BerniniProcessor.fromPretrained(
             mllmDir: modelDir.appending(path: "mllm"))
+        // The caller's negative prompt steers the planner's uncond stream too —
+        // encoding it into umT5 (phase 2) alone would plan against a different
+        // negative than it renders with. Absent one, upstream's DEFAULT_NEG_PROMPT
+        // stays verbatim (the Qwen-side constant, NOT `config.sampleNegPrompt`).
         let inputs = processor.process(
             prompt: prompt, task: task,
-            width: width, height: height, numFrames: numFrames)
+            width: width, height: height, numFrames: numFrames,
+            negativePrompt: negativePrompt ?? BerniniProcessor.defaultNegativePrompt)
         func toStream(_ s: BerniniProcessedStream) -> PlannerStream {
             let ids = MLXArray(s.inputIds.map(Int32.init))[.newAxis]
             let embeds = planner.backbone.embed(ids).asType(.bfloat16)
@@ -117,6 +136,9 @@ public func plannedGenerate(
     MLX.Memory.clearCache()
 
     // ---- phase 2: T5 (unpadded, load → evict inside) ----
+    // CAN seam: the plan's final forwards and the 11 GB umT5 load sit between
+    // the last `onPlanStep` and the first `onRenderStep` — checkpoint the gap.
+    try Task.checkCancellation()
     let negative = negativePrompt ?? config.sampleNegPrompt
     let (t5, negT5) = try PlannerTextEncode.encodeUnpadded(
         modelDir: modelDir, config: config, tokenizer: umt5Tokenizer,
@@ -132,13 +154,14 @@ public func plannedGenerate(
         wotxtWovit: cat(negT5, contexts.condEmbedsWotxtWovit))
 
     // ---- phase 3: RENDER (resident dual experts) ----
+    try Task.checkCancellation()
     let tLat = (numFrames - 1) / config.vaeStride[0] + 1
     let latent = try wvitcfgSample(
         high: renderer.highNoiseExpert, low: renderer.lowNoiseExpert,
         contexts: wv,
         targetShape: [config.vaeZDim, tLat,
                       height / config.vaeStride[1], width / config.vaeStride[2]],
-        headDim: 128,
+        headDim: config.headDim,
         boundaryTimestep: renderer.boundaryTimestep, steps: renderSteps,
         seed: seed
     ) { i, _ in

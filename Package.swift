@@ -69,6 +69,7 @@ let package = Package(
             name: "MLXBerniniRTests",
             dependencies: [
                 "MLXBerniniR",
+                "BerniniR",  // ConformanceTests probes `hasPlannerPlane` directly
                 .product(name: "MLXServeConformance", package: "mlx-engine-swift"),
             ],
             path: "Tests/MLXBerniniRTests"

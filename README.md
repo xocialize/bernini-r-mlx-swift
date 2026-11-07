@@ -52,8 +52,10 @@ on Apple Silicon via [mlx-swift](https://github.com/ml-explore/mlx-swift).
 > checkpoint the existing `t2v`/`t2i` surfaces route to planner-conditioned generation**
 > (`plannedGenerate`: 25-step MaskGIT plan, planner paged in per request and EVICTED → unpadded
 > umT5 → 4-context wvitcfg render on the resident dual experts → streaming decode) — the
-> paper-grade path; v1 checkpoints keep the classic samplers, reference/init images keep their
-> classic routes, and planned generation REFUSES while block-streamed (hand-driven forwards).
+> paper-grade path; v1 (or partial) checkpoints keep the classic samplers, reference/init images
+> keep their classic routes, and block-streamed or Lightning configs FALL BACK to the classic
+> samplers (the planner's hand-driven forwards bypass the streamer's group loop) rather than
+> failing the surface.
 > Engine-seam smoke `RunBernini --v4-package`: t2i 190.9 s · t2v 17f 282.6 s · peak 82.3 GB
 > (480×320/16 steps, bf16). Spec: [`PORTING-SPEC-V2.md`](PORTING-SPEC-V2.md); gates:
 > `--vproc-gate | --v1-gate | --v2-gate | --v3-e2e | --v4-package`.

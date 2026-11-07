@@ -245,19 +245,19 @@ public final class DiffLossFM: Module {
         let model = DiffLossFM()
         // CPU-pin (watchdog doctrine — see QwenPlannerBackbone.fromPretrained).
         let params = try Device.withDefaultDevice(.cpu) { () -> [String: MLXArray] in
-        let raw = try MLX.loadArrays(url: file)
-        var params: [String: MLXArray] = [:]
-        for (key, value) in raw {
-            var k = key
-            k = k.replacingOccurrences(of: "time_embed.mlp.0", with: "time_embed.mlp_0")
-            k = k.replacingOccurrences(of: "time_embed.mlp.2", with: "time_embed.mlp_2")
-            k = k.replacingOccurrences(of: ".mlp.0", with: ".mlp_0")
-            k = k.replacingOccurrences(of: ".mlp.2", with: ".mlp_2")
-            k = k.replacingOccurrences(of: "adaLN_modulation.1", with: "adaLN")
-            params[k] = dtype.map { value.asType($0) } ?? value
-        }
-        WeightLoader.materialize(params)
-        return params
+            let raw = try MLX.loadArrays(url: file)
+            var params: [String: MLXArray] = [:]
+            for (key, value) in raw {
+                var k = key
+                k = k.replacingOccurrences(of: "time_embed.mlp.0", with: "time_embed.mlp_0")
+                k = k.replacingOccurrences(of: "time_embed.mlp.2", with: "time_embed.mlp_2")
+                k = k.replacingOccurrences(of: ".mlp.0", with: ".mlp_0")
+                k = k.replacingOccurrences(of: ".mlp.2", with: ".mlp_2")
+                k = k.replacingOccurrences(of: "adaLN_modulation.1", with: "adaLN")
+                params[k] = dtype.map { value.asType($0) } ?? value
+            }
+            WeightLoader.materialize(params)
+            return params
         }
         try model.update(
             parameters: ModuleParameters.unflattened(params), verify: [.noUnusedKeys])

@@ -122,9 +122,11 @@ import Testing
     }
 
     @Test func plannerPlaneProbeKeysOnV2Files() throws {
-        // `hasPlannerPlane` is the planned-dispatch key: it must require BOTH the
-        // MLLM shard and the DiffLoss head — a classic renderer checkpoint (or a
-        // partial copy) must stay on the classic samplers.
+        // `hasPlannerPlane` is the planned-dispatch key: it must require EVERY file
+        // `BerniniPlanner.fromPretrained` loads — the MLLM shard, the connector/mask
+        // tokens, and the DiffLoss head. A classic renderer checkpoint, or a partial
+        // copy missing any one of them, must stay on the classic samplers rather
+        // than committing to the planned path and throwing mid-request.
         let root = FileManager.default.temporaryDirectory
             .appending(path: "bernini-v2-probe-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -132,12 +134,20 @@ import Testing
             at: root.appending(path: "mllm"), withIntermediateDirectories: true)
         #expect(!hasPlannerPlane(modelDir: root))
 
-        FileManager.default.createFile(
-            atPath: root.appending(path: "mllm/model.safetensors").path, contents: Data())
-        #expect(!hasPlannerPlane(modelDir: root))  // MLLM alone is not the plane
+        // Adding the files one at a time: the probe stays false until the LAST one.
+        for (i, file) in plannerPlaneFiles.enumerated() {
+            FileManager.default.createFile(
+                atPath: root.appending(path: file).path, contents: Data())
+            #expect(hasPlannerPlane(modelDir: root) == (i == plannerPlaneFiles.count - 1))
+        }
 
-        FileManager.default.createFile(
-            atPath: root.appending(path: "vit_decoder.safetensors").path, contents: Data())
+        // ...and removing any single one takes it back to the classic samplers.
+        for file in plannerPlaneFiles {
+            let url = root.appending(path: file)
+            try FileManager.default.removeItem(at: url)
+            #expect(!hasPlannerPlane(modelDir: root))
+            FileManager.default.createFile(atPath: url.path, contents: Data())
+        }
         #expect(hasPlannerPlane(modelDir: root))
     }
 

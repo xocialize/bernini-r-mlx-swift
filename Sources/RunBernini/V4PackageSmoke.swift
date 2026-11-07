@@ -13,12 +13,22 @@
 // Defaults are the V3-calibrated smoke config (480x320, 17f, 16 steps). Prewarm
 // the checkpoint from DEV_ARCHIVE first (cold-load Metal watchdog).
 
+import BerniniR
 import Foundation
 import MLX
 import MLXBerniniR
 import MLXToolKit
 
 func runV4PackageSmoke(modelDir: URL) async throws {
+    // The whole point of this gate is that the package ROUTES onto plannedGenerate.
+    // Without the planner plane it would quietly run the classic samplers and still
+    // print timings/peaks — receipts that read as v2 but measure v1.
+    guard hasPlannerPlane(modelDir: modelDir) else {
+        fatalError(
+            "[v4] \(modelDir.path) has no planner plane (needs "
+                + plannerPlaneFiles.joined(separator: ", ")
+                + ") — this smoke would silently measure the classic path")
+    }
     let width = argValue("--width").flatMap(Int.init) ?? 480
     let height = argValue("--height").flatMap(Int.init) ?? 320
     let frames = argValue("--frames").flatMap(Int.init) ?? 17
@@ -33,10 +43,24 @@ func runV4PackageSmoke(modelDir: URL) async throws {
     config.modelDirectory = modelDir
     let package = BerniniRPackage(configuration: config)
 
+    // MLX's peak is a high-water mark that never falls, so reading it after each
+    // phase would report max-over-all-phases-so-far and mis-attribute t2i's peak to
+    // t2v. Reset between phases (the allocator re-seeds peak from the still-active
+    // resident bytes on the next allocation, so each phase's number is a true
+    // envelope) and carry the running max ourselves for the DONE line.
+    var overallPeakBytes = 0
+    func phasePeakGB() -> Double {
+        let peak = GPU.peakMemory
+        overallPeakBytes = max(overallPeakBytes, peak)
+        GPU.resetPeakMemory()
+        return Double(peak) / 1e9
+    }
+
     print("[v4] load() — resident renderer + VAE from \(modelDir.path)")
     let t0 = Date()
     try await package.load()
-    print(String(format: "  load: %.1fs", -t0.timeIntervalSinceNow))
+    print(String(format: "  load: %.1fs, peak %.1f GB",
+                 -t0.timeIntervalSinceNow, phasePeakGB()))
 
     if !t2vOnly {
         print("[v4] run(T2IRequest) — planned dispatch, \(width)x\(height), \(steps) steps")
@@ -55,7 +79,7 @@ func runV4PackageSmoke(modelDir: URL) async throws {
             format: "  t2i: %.1fs, %@ %dx%d, %d bytes -> %@, peak %.1f GB",
             -t.timeIntervalSinceNow, t2i.image.format.rawValue,
             t2i.image.width ?? -1, t2i.image.height ?? -1, t2i.image.data.count,
-            png.path, Double(GPU.peakMemory) / 1e9))
+            png.path, phasePeakGB()))
     }
 
     if !t2iOnly {
@@ -76,10 +100,11 @@ func runV4PackageSmoke(modelDir: URL) async throws {
             format: "  t2v: %.1fs, %@ %d bytes (%.2fs @ %.0f fps) -> %@, peak %.1f GB",
             -t.timeIntervalSinceNow, t2v.video.format.rawValue, t2v.video.data.count,
             t2v.video.durationSeconds ?? 0, t2v.video.frameRate ?? 0,
-            mp4.path, Double(GPU.peakMemory) / 1e9))
+            mp4.path, phasePeakGB()))
     }
 
     await package.unload()
-    print(String(format: "[v4] DONE total %.1fs, peak %.1f GB",
-                 -t0.timeIntervalSinceNow, Double(GPU.peakMemory) / 1e9))
+    _ = phasePeakGB()  // fold the unload phase in before reporting the overall max
+    print(String(format: "[v4] DONE total %.1fs, peak %.1f GB (max over phases)",
+                 -t0.timeIntervalSinceNow, Double(overallPeakBytes) / 1e9))
 }
