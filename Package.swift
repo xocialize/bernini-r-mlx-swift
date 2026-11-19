@@ -18,13 +18,13 @@ let package = Package(
         .library(name: "MLXBerniniR", targets: ["MLXBerniniR"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift.git", "0.32.3"..<"0.33.0"),  // NAX split-K fix (AB-R-0778)
+        .package(url: "https://github.com/xocialize/mlx-swift", "0.32.3" ..< "0.34.0"),  // NAX split-K fix (AB-R-0778); fleet fork admits 0.33.x (AB-D-0264)
         // Tokenizers (umT5 sentencepiece) only; weight download is our own loader.
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         // MLXEngine contract (MLXToolKit) for the wrapper target; ≥0.27.0 for the CAN
         // cancellation gate (MLXServeConformance.CancellationConformance). The core
         // `BerniniR` target stays engine-agnostic.
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.27.0"),
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.82.1"),
         // The neutral Wan substrate (DiT + VAE + umT5 + RoPE + schedulers + loader),
         // extracted so Helios/Phantom/TI2V-5B share it. Local path during B0; tagged dep later.
         // The shared Wan substrate (B0 extraction). Versioned dep since 2026-08-14 —
